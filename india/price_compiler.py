@@ -20,7 +20,7 @@ import matplotlib.pyplot as plt
 import sys
 import os
 import errno
-from tqdm import tqdm
+from tqdm import tqdm, trange
 
 # Funcitons
 
@@ -43,13 +43,14 @@ def write_compiled_data(data, folder, group_by_column_name, group_by_values):
 data_source_dir = '/home/dinesh/Documents/security_prices/india'
 nse_sub_dir = 'NSE-EOD'
 outfolder = data_source_dir + '/' + nse_sub_dir
+missing_data_threshold = 5
 
 # MAIN CODE
 nse_symbols_str = input('Enter NSE symbol(s) (comma sep if many): ')    # Get one or more stock symbols for which to compile price data
 nse_symbols = [strlet.strip() for strlet in nse_symbols_str.split(',')] # 
 
 try:
-    nsefiles = os.scandir(data_source_dir + '/' + nse_sub_dir)  # Returns list of files
+    nsefiles = os.listdir(data_source_dir + '/' + nse_sub_dir)  # Returns list of files
 except Exception as e:
     print('Error: ', e)
     sys.exit(errno.ENOENT)
@@ -59,10 +60,11 @@ except Exception as e:
 #    sys.exit(errno.ENOENT)
 
 compiled_data = pd.DataFrame()
+missing_data_count = 0
 iteration = 0
-for file in nsefiles: #tqdm(nsefiles):   # Main loop for compiling data for input symbol
+for file in tqdm(nsefiles, desc='data read', total=100, leave=True):   # Main loop for compiling data for input symbol
     try:
-        filename = data_source_dir + '/' + nse_sub_dir + '/' + file.name
+        filename = data_source_dir + '/' + nse_sub_dir + '/' + file
         data = pd.read_csv(filename, sep=',', na_values='-')
     except Exception as e:
         print('Error: ', e)
@@ -82,13 +84,20 @@ for file in nsefiles: #tqdm(nsefiles):   # Main loop for compiling data for inpu
         sys.exit(errno.EIO)
     
     if relevant_data.empty: # For the rare case where none of the symbols entered by user exist in the data
-        print('Error: Entered NSE symbols may be incorrect. Please check')
-        sys.exit(errno.EIO)
+        missing_data_count = missing_data_count + 1
+        if missing_data_count > missing_data_threshold:
+            print('Warning: Too many missing data. Please check entered NSE symbol')
+            user_yes_no = input("Continue (y)/ Halt(n)?: ")
+            if user_yes_no == 'n':
+                sys.exit(errno.EL3HLT)
+            else:
+                missing_data_count = missing_data_count + 1 
+        continue
 
     iteration = iteration + 1   # Debug code starts here
-    if iteration == 5:      
-        break
-    print(relevant_data)    # Debug code ends here
+#    if iteration == 5:      
+#        break
+#    print(relevant_data)    # Debug code ends here
 
     compiled_data = compiled_data.append(relevant_data)
     
