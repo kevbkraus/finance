@@ -20,8 +20,11 @@ import calendar
 import sys
 import errno
 
-# Default parameters
+# Default parameters and defines
 consolidated_prices_folder = '/home/dinesh/Documents/security_prices/india/NSE-EOD'
+days_ordered = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday']  
+months_ordered = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
 
 # Get input from user for the file that has NSE price data of the security in question
 nse_symbol = input('Enter NSE symbol: ')
@@ -87,27 +90,63 @@ for year,groupdata in yeargroup:
     daily_outlier_df = daily_outlier_df.assign(returns = daily_returns[daily_outlier_indices])      # as outliers
     daily_outlier_df = daily_outlier_df.assign(dates = outlier_dates_str)
 
+    daily_returns_description = "Mean: %.4f, \nStd: %.4f, \n\nMin: %.4f, \n\nQ1: %.4f, \nMedian: %.4f, \nQ3: %.4f, \n\nMax: %.4f"\
+                                %(refined_data['returns'].mean(), refined_data['returns'].std(),\
+                                  refined_data['returns'].min(),\
+                                  refined_data['returns'].quantile(0.25),\
+                                  refined_data['returns'].quantile(0.5),\
+                                  refined_data['returns'].quantile(0.75),\
+                                  refined_data['returns'].max()) 
+
+    monthly_rates = np.empty([12,])
+    for month_index, month in enumerate(months_ordered):    # Calculate monthly returns
+        prices = groupdata.loc[groupdata['month'] == month, 'close'].values
+        monthly_rates[month_index] = (prices[-1]/prices[0]) - 1 # This is an approximation of the actual monthly rate. Weekends
+                                                               # at the end of a month or holidays will reduce accuracy. We use
+                                                               # shortcut method because we don't want to deal with all kinds of
+                                                               # corner cases. For our analysis, this is sufficient
+    monthly_rates_df = pd.DataFrame(data = monthly_rates, columns = ['monthly returns'])
+    monthly_returns_description = "Min: %.4f, \n\nQ1: %.4f, \nMedian: %.4f, \nQ3: %.4f, \n\nMax: %.4f"\
+                                  %(monthly_rates_df['monthly returns'].min(),\
+                                    monthly_rates_df['monthly returns'].quantile(0.25),\
+                                    monthly_rates_df['monthly returns'].quantile(0.5),\
+                                    monthly_rates_df['monthly returns'].quantile(0.75),\
+                                    monthly_rates_df['monthly returns'].max()) 
+
     # Description and visualisation
     print('\n -------------- Returns Summary ---------------')
     print(refined_data.returns.describe())
     print('\nOutliers:')
     print(daily_outlier_df)
     
-    days_ordered = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday']  
-    months_ordered = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-
     fig1 = plt.figure(figure_id)
     figure_id = figure_id + 1
     fig1.suptitle('Daily Returns', fontsize=16)
-    ax1 = fig1.add_subplot(221)
-    sns.histplot(x = 'returns', color = 'green', data = refined_data, kde = True, ax = ax1)
+    
+    ax0 = fig1.add_subplot(221)
+    plt.text(x = 0.3, y = 0.9, s = "Daily returns description", fontsize = 14)
+    plt.text(x = 0.1, y = 0.7, s = daily_returns_description, 
+            horizontalalignment = "left", verticalalignment = "top", fontsize = 12)   
+
+    ax1 = fig1.add_subplot(222)
+    sns.histplot(x = 'returns', data = refined_data, kde = True, ax = ax1, color = '#dc77f7')
     plt.axvline(refined_data['returns'].mean(), 0,1, color = 'red')    
     
-    ax2 = fig1.add_subplot(222)
+    ax2 = fig1.add_subplot(223)
     sns.boxplot(x = 'day', y = 'returns', order = days_ordered, data = refined_data, ax = ax2)
 
-    ax3 = fig1.add_subplot(223)
+    ax3 = fig1.add_subplot(224)
     sns.boxplot(x = 'month', y = 'returns', order = months_ordered, data = refined_data, ax = ax3)
+
+    fig2 = plt.figure(figure_id)
+    figure_id = figure_id + 1
+    fig2.suptitle('Monthly Returns', fontsize=16)
+    
+    ax4 = fig2.add_subplot(111)
+    sns.boxplot(x = 'monthly returns', color = '#f64c30', data = monthly_rates_df, ax = ax4)
+    plt.text(x = 0.8, y = 0.8, s = monthly_returns_description, 
+            transform=ax.transAxes, horizontalalignment = "left", verticalalignment = "top", fontsize = 12)   
+    
 
     plt.show() 
 
