@@ -74,7 +74,7 @@ for file in tqdm(nsefiles, desc='data read', total=100, leave=True):   # Main lo
         sys.exit(errno.EIO)
 
     if data.empty:
-        print('Error: csv file returned no entries')
+        print('\nError: csv file returned no entries')
         sys.exit(errno.EIO)
 
     try:
@@ -103,3 +103,4 @@ for file in tqdm(nsefiles, desc='data read', total=100, leave=True):   # Main lo
     
 write_compiled_data(data=compiled_data, folder=outfolder, 
                     group_by_column_name='<ticker>', group_by_values=nse_symbols)
+
