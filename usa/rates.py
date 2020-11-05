@@ -97,15 +97,16 @@ DJI_ret['infl_adj_EAR'] = ( ((DJI_ret['return']/100)+1)/((DJI_ret['inflation']/1
 nasdaq_ret['infl_adj_EAR'] = ( ((nasdaq_ret['return']/100)+1)/((nasdaq_ret['inflation']/100)+1) - 1 )*100
 
 # Visualization
-fig1, ax1 = plt.subplots()
+fig1, ax1 = plt.subplots(figsize = (15,10))
 fig1.suptitle('US Benchmarks')
 ax1.set_xlabel('date')
 ax1.set_ylabel('returns (%)')
 ax1.plot(inflation['inflation'], label = 'Inflation')
 ax1.plot(tnote_10Y['Value'], label = 'T-note 10 year (nominal)')
+ax1.grid(True)
 ax1.legend()
 
-fig2, ax2 = plt.subplots()
+fig2, ax2 = plt.subplots(figsize = (15,10))
 fig2.suptitle('US Personal Debt Returns $\it{real}$')
 ax2.set_xlabel('date')
 ax2.set_ylabel('returns (%)')
@@ -115,7 +116,7 @@ ax2.plot(tnote_10Y_monthly['infl_adj_yield'], label = 'T-note 10 year (ref)')
 ax2.grid(True)
 ax2.legend()
 
-fig3, ax3 = plt.subplots()
+fig3, ax3 = plt.subplots(figsize = (15,10))
 fig3.suptitle('US Corporate Debt Returns $\it{real}$')
 ax3.set_xlabel('date')
 ax3.set_ylabel('returns (%)')
@@ -126,7 +127,7 @@ ax3.plot(tnote_10Y_monthly['infl_adj_yield'], label = 'T-note 10 year (ref)')
 ax3.grid(True)
 ax3.legend()
 
-fig4, ax4 = plt.subplots()
+fig4, ax4 = plt.subplots(figsize = (15,10))
 fig4.suptitle('US Stock Returns $\it{real}$')
 ax4.set_xlabel('date')
 ax4.set_ylabel('returns (%)')
