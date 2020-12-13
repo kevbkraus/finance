@@ -54,6 +54,17 @@ if response['symbol'] != symbol:
 inc_stmt_annual = pd.DataFrame(response['annualReports'])
 inc_stmt_quart = pd.DataFrame(response['quarterlyReports'])
 
+inc_stmt_annual['fiscalDateEnding'] = pd.to_datetime(inc_stmt_annual['fiscalDateEnding'])
+inc_stmt_annual.set_index('fiscalDateEnding', inplace=True)
+inc_stmt_annual.to_csv('temp.csv')                                      # This jugaad of writing to csv and reading back 
+inc_stmt_annual = pd.read_csv('temp.csv', index_col=0, parse_dates=True)    # is done to convert numbers originally parsed as
+                                                                        # strings to correctly be parsed as numbers
+
+inc_stmt_quart['fiscalDateEnding'] = pd.to_datetime(inc_stmt_quart['fiscalDateEnding'])
+inc_stmt_quart.set_index('fiscalDateEnding', inplace=True)
+inc_stmt_quart.to_csv('temp.csv')
+inc_stmt_quart = pd.read_csv('temp.csv', index_col=0, parse_dates=True)
+
 # BALANCE SHEETS 
 query_params = { "function": "BALANCE_SHEET", "symbol": symbol, "apikey": AV_KEY}
 response = (requests.get(AV_URL, params=query_params)).json()
@@ -64,5 +75,44 @@ if response['symbol'] != symbol:
 bl_sheet_annual = pd.DataFrame(response['annualReports'])
 bl_sheet_quart = pd.DataFrame(response['quarterlyReports'])
 
+bl_sheet_annual['fiscalDateEnding'] = pd.to_datetime(bl_sheet_annual['fiscalDateEnding'])
+bl_sheet_annual.set_index('fiscalDateEnding', inplace=True)
+bl_sheet_annual.to_csv('temp.csv')
+bl_sheet_annual = pd.read_csv('temp.csv', index_col=0, parse_dates=True)
+
+bl_sheet_quart['fiscalDateEnding'] = pd.to_datetime(bl_sheet_quart['fiscalDateEnding'])
+bl_sheet_quart.set_index('fiscalDateEnding', inplace=True)
+bl_sheet_quart.to_csv('temp.csv')
+bl_sheet_quart = pd.read_csv('temp.csv', index_col=0, parse_dates=True)
 
 
+# Visualisation
+fig1,ax1 = plt.subplots()
+fig1.suptitle('Price vs. Net income')
+pcolor = 'tab:blue'
+ax1.set_xlabel('date')
+ax1.set_ylabel('price (USD)', color=pcolor)
+ax1.plot(prices['Close'], color=pcolor)
+ax1.tick_params(axis='y', labelcolor=pcolor)
+
+ax2 = ax1.twinx()
+pcolor = 'tab:red'
+ax2.set_ylabel('net income (million USD)', color=pcolor)
+ax2.plot(inc_stmt_annual['netIncome']/1000000, color=pcolor, marker='o')
+ax2.tick_params(axis='y', labelcolor=pcolor)
+
+fig2,ax3 = plt.subplots()
+fig2.suptitle('Price vs. Net income')
+pcolor = 'tab:blue'
+ax3.set_xlabel('date')
+ax3.set_ylabel('price (USD)', color=pcolor)
+ax3.plot(prices['Close'].loc[inc_stmt_quart.index[-1]:], color=pcolor)
+ax3.tick_params(axis='y', labelcolor=pcolor)
+
+ax4 = ax3.twinx()
+pcolor = 'tab:red'
+ax4.set_ylabel('net income (million USD)', color=pcolor)
+ax4.plot(inc_stmt_quart['netIncome']/1000000, color=pcolor, marker='o')
+ax4.tick_params(axis='y', labelcolor=pcolor)
+
+plt.show()
