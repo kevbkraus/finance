@@ -16,18 +16,34 @@ import sys
 import errno
 import argparse
 
-# Parse command line arguments
-msg = 'Researches a stock by its fundamentals, ratios'
-parser = argparse.ArgumentParser(description=msg)
-parser.add_argument('symbol', help='Stock symbol')
-
-args = parser.parse_args()
-symbol = args.symbol
-
 # Parameters
 FMP_URL = "https://financialmodelingprep.com/api/v3"
 FMP_KEY = os.environ.get('FMP_API_KEY')
 consolidated_prices_folder = '/home/dinesh/Documents/security_prices/usa'
+
+# Parse command line arguments
+msg = 'Researches a stock by its fundamentals, ratios'
+parser = argparse.ArgumentParser(description=msg)
+parser.add_argument('-s', '--symbol', help='Stock symbol')
+arghelp = """Give a GICS sector name exactly as in https://en.wikipedia.org/wiki/List_of_S%26P_500_companies. A  
+           random recurity will be chosen from this sector. Note that if -s argument is supplied, this 
+           argument is ignored."""
+parser.add_argument('-i', '--sector', help=arghelp)
+
+args = parser.parse_args()
+if args.symbol:
+    symbol = args.symbol
+    sector = 'none'
+elif args.sector: # This gets processed only if no symbol is explicitly given
+    sp500_list = pd.read_csv(consolidated_prices_folder + '/download_log.csv')
+    sublist = sp500_list[sp500_list['GICS Sector']==args.sector]
+    symbol = sublist.sample()['Symbol'].values[0]
+    sector = args.sector
+else:
+    sp500_list = pd.read_csv(consolidated_prices_folder + '/download_log.csv')
+    sample_df = sp500_list.sample()
+    symbol = sample_df['Symbol'].values[0]
+    sector = sample_df['GICS Sector'].values[0]
 
 # Main code
 filename = consolidated_prices_folder + '/' + symbol + '.csv'
@@ -57,7 +73,7 @@ inc_stmt_annual.set_index('date', inplace=True)
 
 # Visualisation
 fig1,ax1 = plt.subplots()
-fig1.suptitle(symbol)
+fig1.suptitle(symbol + ' (' + sector + ')')
 pcolor = 'tab:blue'
 ax1.set_xlabel('date')
 ax1.set_ylabel('price (USD)', color=pcolor)
