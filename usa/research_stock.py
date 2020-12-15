@@ -52,10 +52,8 @@ if response[0]['symbol'] != symbol:
     sys.exit(errno.EIO)
 
 inc_stmt_annual = pd.DataFrame(response)
-inc_stmt_annual['date'] = pd.to_datetime(inc_stmt_annual['date'])
+inc_stmt_annual['date'] = pd.to_datetime(inc_stmt_annual['date']).dt.date
 inc_stmt_annual.set_index('date', inplace=True)
-
-
 
 # Visualisation
 fig1,ax1 = plt.subplots()
@@ -65,13 +63,16 @@ ax1.set_xlabel('date')
 ax1.set_ylabel('price (USD)', color=pcolor)
 ax1.plot(prices['Close'], color=pcolor)
 ax1.tick_params(axis='y', labelcolor=pcolor)
-ax1.grid(True, axis='x')
+ax1.grid(True, axis='both')
 
 ax2 = ax1.twinx()
 pcolor = 'tab:red'
 ax2.set_ylabel('net income (million USD)', color=pcolor)
 ax2.plot(inc_stmt_annual['netIncome']/1000000, color=pcolor, marker='o')
 ax2.tick_params(axis='y', labelcolor=pcolor)
-ax2.grid(True, axis='both')
+
+ax1.set_xticks(inc_stmt_annual.index)
+ax1.set_xticklabels(inc_stmt_annual.index, rotation = 90)
+#ax2.grid(True, axis='both')
 
 plt.show()
