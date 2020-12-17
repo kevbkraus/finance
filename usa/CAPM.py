@@ -33,7 +33,7 @@ consolidated_prices_folder = '/home/dinesh/Documents/security_prices/usa'
 
 sp500_list = pd.read_csv(consolidated_prices_folder + '/download_log.csv')
 if sector != 'all':
-    sublist = sp500_list.loc[(sp500_list['GICS Sector'] == sector) & (sp500_list['download_status'] == 'done')]
+    sublist = sp500_list.loc[(sp500_list['GICS Sector'] == sector) and (sp500_list['download_status'] == 'done')]
 else:
     sublist = sp500_list.loc[sp500_list['download_status'] == 'done']
 
@@ -80,6 +80,7 @@ for symbol in tqdm(symbols, desc='Symbols processed'):
     count = count+1
 
 
+risk_return.to_csv(consolidated_prices_folder + '/' + 'risk_return' + '.csv')
 x = risk_return['std annual return'].values.reshape((-1,1))
 y = risk_return['mean annual return'].values
 model = LinearRegression()
@@ -88,11 +89,11 @@ p = model.predict(x)
 
 # Visualization
 fig1,ax1 = plt.subplots()
+fig1.suptitle('Sector: ' + sector)
 ax1.scatter(x, y, color='black')
 ax1.plot(x, p, color='blue', linewidth=3)
 ax1.set_xlabel('risk')
 ax1.set_ylabel('return')
-ax1.title('Sector: ', sector)
 
 lrfit_details = "r-squared: %.2f, \nmse: %.4f, \n\nbeta: %.2f, \nalpha: %.2f"\
                               %(metrics.r2_score(y,p),\
