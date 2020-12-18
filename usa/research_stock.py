@@ -25,8 +25,8 @@ consolidated_prices_folder = '/home/dinesh/Documents/security_prices/usa'
 msg = 'Researches a stock by its fundamentals, ratios'
 parser = argparse.ArgumentParser(description=msg)
 parser.add_argument('-s', '--symbol', help='Stock symbol')
-arghelp = """Give a GICS sector name exactly as in https://en.wikipedia.org/wiki/List_of_S%26P_500_companies. A  
-           random recurity will be chosen from this sector. Note that if -s argument is supplied, this 
+arghelp = """Give a GICS sector name exactly as in Wikipedia: List of SP_500 companies. A  
+           random security will be chosen from this sector. Note that if -s argument is supplied, this 
            argument is ignored."""
 parser.add_argument('-i', '--sector', help=arghelp)
 
