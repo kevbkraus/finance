@@ -29,7 +29,7 @@ parser.add_argument('-f', '--update_data', help=help_text)
 parser.add_argument('-b', '--begin_year', help='Year from which to consider data. If not supplied, oldest available year will be used')
 help_text = """ (Hypothesis number) Hypothesis
                 (1) PE ratio vs. net margin
-                (2) Price vs. EBITDA
+                (2) Price vs. Ebitda ratio
                 (3) Return per risk vs. percentage held by instituitional investors
                 (4) Best Return per risk stocks vs. SP500 """
 parser.add_argument('hyp_num', help=help_text, type=int)
@@ -67,11 +67,17 @@ if args.sample_size:
     
 
 # Main Code starts here:
-if args.hyp_num == 1:
-    print(' -----------------------------------------------------------------------------------------')
-    print('                            PE ratio vs. Net margin                                       ')
-    print(' -----------------------------------------------------------------------------------------')
-    xy_df = pd.DataFrame(columns=['symbol', 'date', 'PE', 'net margin'])
+if args.hyp_num == 1 or args.hyp_num == 2:
+    if args.hyp_num == 1:
+        print(' -----------------------------------------------------------------------------------------')
+        print('                            PE ratio vs. Net margin                                       ')
+        print(' -----------------------------------------------------------------------------------------')
+    else:
+        print(' -----------------------------------------------------------------------------------------')
+        print('                            PE ratio vs. Ebitda margin                                    ')
+        print(' -----------------------------------------------------------------------------------------')
+    
+    xy_df = pd.DataFrame(columns=['symbol', 'date', 'PE', 'margin'])
     for symbol in tqdm(sublist['Symbol'].values, desc='Symbols processed:'):
         inc_stmt_filename = consolidated_prices_folder + '/annual_income_statements/' + symbol + '.csv'
         if args.update_data or (not os.path.exists(inc_stmt_filename)): # Get income statements from the net
@@ -98,13 +104,26 @@ if args.hyp_num == 1:
 
         idx = list(map(lambda x: prices_yearly.index.get_loc(str(x), method='nearest'), inc_stmt_annual.index.values)) # Because dates don't match exactly between
                                                                                                                   # price dataframe and income statement data
-                                                                                                                  # we have to find the nearest dates
-        samples_df = pd.DataFrame({'symbol': symbol, 'date': inc_stmt_annual.index.values,
-                                   'PE':prices_yearly.iloc[idx].values/inc_stmt_annual['eps'].values, 
-                                   'net margin':inc_stmt_annual['netIncomeRatio'].values})
+        if args.hyp_num == 1:                                                                                                          # we have to find the nearest dates
+            samples_df = pd.DataFrame({'symbol': symbol, 'date': inc_stmt_annual.index.values,
+                                       'PE':prices_yearly.iloc[idx].values/inc_stmt_annual['eps'].values, 
+                                       'margin':inc_stmt_annual['netIncomeRatio'].values})
+        else:
+            samples_df = pd.DataFrame({'symbol': symbol, 'date': inc_stmt_annual.index.values,
+                                       'PE':prices_yearly.iloc[idx].values/inc_stmt_annual['eps'].values, 
+                                       'margin':inc_stmt_annual['ebitdaratio'].values})
         xy_df = xy_df.append(samples_df, ignore_index=True)
-
-    x = xy_df['net margin'].values.reshape((-1,1))
+    
+    # Eliminate outliers
+    PE_Q1 = xy_df['PE'].quantile(0.25)
+    PE_Q3 = xy_df['PE'].quantile(0.75)
+    marg_Q1 = xy_df['margin'].quantile(0.25)
+    marg_Q3 = xy_df['margin'].quantile(0.75)
+    xy_df = xy_df[(xy_df['PE'] > (PE_Q1 - 1.5*PE_IQR)) & (xy_df['PE'] < (PE_Q3 + 1.5*PE_IQR))]
+    xy_df = xy_df[(xy_df['margin'] > (marg_Q1 - 1.5*marg_IQR)) & (xy_df['margin'] < (marg_Q3 + 1.5*marg_IQR))]
+   
+    # Linear regression 
+    x = xy_df['margin'].values.reshape((-1,1))
     y = xy_df['PE'].values
     model = LinearRegression()
     model.fit(x,y)
@@ -115,7 +134,11 @@ if args.hyp_num == 1:
     fig1.suptitle('Sector: ' + sector)
     ax1.scatter(x, y, color='black')
     ax1.plot(x, p, color='blue', linewidth=3)
-    ax1.set_xlabel('Net margin (no unit)')
+    if args.hyp_num == 1:
+        ax1.set_xlabel('Net margin (no unit)')
+    else:
+        ax1.set_xlabel('Ebitda margin (no unit)')
+
     ax1.set_ylabel('PE (no unit)')
     
     lrfit_details = "r-squared: %.2f, \nmse: %.4f, \n\nbeta: %.2f, \nalpha: %.2f"\
@@ -128,10 +151,6 @@ if args.hyp_num == 1:
                 horizontalalignment = "left", verticalalignment = "top", fontsize = 12)   
     plt.show()
         
-elif args.hyp_num == 2:
-    print(' -----------------------------------------------------------------------------------------')
-    print('Price vs. EBITDA')
-    print(' -----------------------------------------------------------------------------------------')
 elif args.hyp_num == 3:
     print(' -----------------------------------------------------------------------------------------')
     print('Price vs. Net margin')
