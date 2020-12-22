@@ -51,12 +51,19 @@ else:
 if args.statement == 'income_statement':
     subfolder = 'income_statements'
     av_function = 'INCOME_STATEMENT'
-else:   # This is the only other possibility because argparser already restritics the choices and produces error if user gives something outside that
+else:   # This is the only other possibility because argparser already restritics the -
+        # choices and produces error if user gives something outside that
     subfolder = 'balance_sheets'
     av_function = 'BALANCE_SHEET'
 
 # Main code
 for symbol in tqdm(symbols, desc='Progress'):
+    annual_stmt_filename = consolidated_prices_folder + '/' + subfolder + '/' + symbol + '_annual.csv'
+    quart_stmt_filename = consolidated_prices_folder + '/' + subfolder + '/' + symbol + '_quarterly.csv'
+
+    if (not args.update_data) and os.path.exists(annual_stmt_filename): # if file already exists and 
+                                                                        # forceful update is not enabled, skip to next symbol 
+        continue        # It is enough to check if annual statement exists - quarterly can be safely assumed to exist if annual does
 
     query_params = { "function": av_function, "symbol": symbol, "apikey": AV_KEY}
     response = (requests.get(AV_URL, params=query_params)).json()
@@ -77,8 +84,8 @@ for symbol in tqdm(symbols, desc='Progress'):
     statement_annual.set_index('fiscalDateEnding', inplace=True)
     statement_quart.set_index('fiscalDateEnding', inplace=True)
 
-    statement_annual.to_csv(consolidated_prices_folder + '/' + subfolder + '/' + symbol + '_annual.csv')
-    statement_quart.to_csv(consolidated_prices_folder + '/' + subfolder + '/' + symbol + '_quarterly.csv')
+    statement_annual.to_csv(annual_stmt_filename)
+    statement_quart.to_csv(quart_stmt_filename)
 
 
     
