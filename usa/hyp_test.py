@@ -1,4 +1,3 @@
-
 # hyp_test.py -------------------------------------------------------------------------------------
 #   Performs hypothesis testing for a number of investment related hypotheses using data of SP500
 # companies
