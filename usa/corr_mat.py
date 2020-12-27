@@ -26,10 +26,10 @@ import argparse
 #
 # -------------------------------------------------------------------------------------------------
 def calc_returns(prices_filename, begin_year):
-    if not os.path.exists(filename): 
+    if not os.path.exists(prices_filename): 
         return pd.Series([], dtype = 'float64')
 
-    stock_price = pd.read_csv(filename, index_col=0, parse_dates=True)
+    stock_price = pd.read_csv(prices_filename, index_col=0, parse_dates=True)
 
     if stock_price.empty or stock_price.index.name != 'Date':   # Check for errors   
         return pd.Series([], dtype = 'float64')
