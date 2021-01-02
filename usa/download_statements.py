@@ -11,6 +11,8 @@ import pandas as pd
 import os
 import sys
 import errno
+import time
+from datetime import datetime
 from tqdm import tqdm, trange
 import argparse
 
@@ -57,6 +59,8 @@ else:   # This is the only other possibility because argparser already restritic
     av_function = 'BALANCE_SHEET'
 
 # Main code
+count = 0
+curr_t = datetime.now()
 for symbol in tqdm(symbols, desc='Progress'):
     annual_stmt_filename = consolidated_prices_folder + '/' + subfolder + '/' + symbol + '_annual.csv'
     quart_stmt_filename = consolidated_prices_folder + '/' + subfolder + '/' + symbol + '_quarterly.csv'
@@ -66,17 +70,22 @@ for symbol in tqdm(symbols, desc='Progress'):
         continue        # It is enough to check if annual statement exists - quarterly can be safely assumed to exist if annual does
 
     query_params = { "function": av_function, "symbol": symbol, "apikey": AV_KEY}
-    response = (requests.get(AV_URL, params=query_params)).json()
     
+    try:
+        response = (requests.get(AV_URL, params=query_params)).json()
+    except:
+        time.sleep(60)
+        continue    # We will lose the current symbol, but that is fine
+        
     # Error checks
     if not response: #If there is no response 
         print('Empty response received for ', symbol)
         continue
 
-    if response['symbol'] != symbol: # This shouldn't happen. But we double check
-        print('Alpha vantage returned wrong data. Expected: ', symbol, '. Got: ', response['symbol'])
-        sys.exit(errno.EIO)
-
+    if 'Note' in response: # This shouldn't happen. But we double check
+        time.sleep(60)
+        continue    # We will lose the current symbol, but that is fine 
+        
     statement_annual = pd.DataFrame(response['annualReports'])
     statement_quart = pd.DataFrame(response['quarterlyReports'])
     
@@ -84,8 +93,15 @@ for symbol in tqdm(symbols, desc='Progress'):
     statement_annual.set_index('fiscalDateEnding', inplace=True)
     statement_quart.set_index('fiscalDateEnding', inplace=True)
 
+    statement_annual.replace({'None':None}, inplace=True) # This will ensure that 'None' is stored as an empty cell
+    statement_quart.replace({'None':None}, inplace=True)
+    
     statement_annual.to_csv(annual_stmt_filename)
     statement_quart.to_csv(quart_stmt_filename)
-
+    
+    count = count+1
+    if (datetime.now()-curr_t).total_seconds() < 60 and count%5 == 0:
+        time.sleep(60 - (datetime.now()-curr_t).total_seconds())
+        curr_t = datetime.now()
 
     

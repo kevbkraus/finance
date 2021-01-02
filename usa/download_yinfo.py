@@ -12,6 +12,8 @@ import yfinance
 import os
 import sys
 import errno
+import time
+from datetime import datetime
 from tqdm import tqdm, trange
 import argparse
 
@@ -52,21 +54,29 @@ if not os.path.exists(yinfo_filename):
 else:
     compiled_info_df = pd.read_csv(yinfo_filename)
 
-if not compiled_info_df.empty:
-    if args.update_data:
-        for symbol in symbols:
-            compile_info_df = compiled_info_df[compiled_info_df['symbol'] == symbol]
-    else:
+# Get a list of symbols to iterate on
+if (not compiled_info_df.empty) and (not args.update_data):
         for symbol in symbols:
             if symbol in compiled_info_df['symbol'].values:
                 symbols.remove(symbol) # To remove unnecessary calls to yfinance
 
+count = 0
+curr_t = datetime.now()
 for symbol in tqdm(symbols, desc='Progress'):
     ticker = yfinance.Ticker(symbol)
-    info_dict = ticker.info
+    try:
+        info_dict = ticker.info
+    except:
+        time.sleep(60)
+
     if 'longBusinessSummary' in info_dict:
         info_dict.pop('longBusinessSummary') 
     compiled_info_df = compiled_info_df.append(info_dict, ignore_index=True)
+    count = count+1
+    if (datetime.now()-curr_t).total_seconds() < 60 and count%5 == 0:
+        time.sleep(60 - (datetime.now()-curr_t).total_seconds())
+        curr_t = datetime.now()
 
+compiled_info_df.drop_duplicates(subset='symbol', keep='last', inplace=True)
 compiled_info_df.set_index('symbol', inplace=True)
 compiled_info_df.to_csv(yinfo_filename)
