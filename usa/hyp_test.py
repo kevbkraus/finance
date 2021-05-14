@@ -44,9 +44,6 @@ else:
     sublist = sp500_list
     sector = 'all' 
 
-if args.sample_size:
-    sublist = sublist.sample(args.sample_size)
-    
 # Main Code starts here:
 if args.hyp_num == 1 or args.hyp_num == 2:
     if args.hyp_num == 1:

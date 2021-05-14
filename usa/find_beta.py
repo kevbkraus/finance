@@ -1,7 +1,8 @@
 
 # find_beta.py ------------------------------------------------------------------------------------
-#   Finds CAPM beta in the same way as yahoo finance does - by running a regression on 36 recent
-# returns of SP500 and a given stock
+#   Compares direct estimation of CAPM beta with regression beta 
+#   Note: To find regression beta in the same way as yahoo finance does - run a regression on 60 
+# recent monthly returns of SP500 and a given stock
 # -------------------------------------------------------------------------------------------------
 import pandas as pd
 from sklearn.linear_model import LinearRegression
@@ -27,7 +28,7 @@ else:
     rf = 0.02
 
 # Set parameters
-start = datetime(2010, 1, 31)
+start = datetime(2016, 12, 2)
 end = date.today()
 start_str = datetime.strftime(start, format='%Y-%m-%d')
 end_str = datetime.strftime(end, format='%Y-%m-%d')
@@ -43,13 +44,19 @@ SP500_monthly['monthly return'] = SP500_monthly['Close'].pct_change(periods=1)  
 stock_monthly = stock.resample('M').last()
 stock_monthly['monthly return'] = stock_monthly['Close'].pct_change(periods=1)
 
+# Find beta by directly estimating cov(stock, sp500) and var(sp500)
+stacked_mat = np.stack((stock_monthly['monthly return'].values[1:], SP500_monthly['monthly return'].values[1:]), axis=0)
+cov_mat = np.cov(stacked_mat)
+beta = cov_mat[0,1]/cov_mat[1,1]
+print("Directly estimated beta:", beta)
+
 # Perform regression and find beta
 new_df = pd.DataFrame(SP500_monthly['monthly return'])
 new_df = new_df.join(stock_monthly['monthly return'], lsuffix=' sp500',rsuffix=' stock')
 new_df.dropna(inplace=True)
 model = LinearRegression()
-x = new_df['monthly return sp500'].values[-61:-1].reshape((-1,1))
-y = new_df['monthly return stock'].values[-61:-1]
+x = new_df['monthly return sp500'].values[1:].reshape((-1,1))
+y = new_df['monthly return stock'].values[1:]
 x = x - rf/12   # Subtract risk free monthly rate (treat rf like an APR
 y = y - rf/12
 model.fit(x,y)
