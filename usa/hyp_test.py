@@ -89,8 +89,10 @@ if args.hyp_num == 1 or args.hyp_num == 2:
     # Eliminate outliers
     PE_Q1 = xy_df['PE'].quantile(0.25)
     PE_Q3 = xy_df['PE'].quantile(0.75)
+    PE_IQR = PE_Q3 - PE_Q1
     marg_Q1 = xy_df['margin'].quantile(0.25)
     marg_Q3 = xy_df['margin'].quantile(0.75)
+    marg_IQR = marg_Q3 - marg_Q1
     xy_df = xy_df[(xy_df['PE'] > (PE_Q1 - 1.5*PE_IQR)) & (xy_df['PE'] < (PE_Q3 + 1.5*PE_IQR))]
     xy_df = xy_df[(xy_df['margin'] > (marg_Q1 - 1.5*marg_IQR)) & (xy_df['margin'] < (marg_Q3 + 1.5*marg_IQR))]
    

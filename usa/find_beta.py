@@ -4,6 +4,7 @@
 #   Note: To find regression beta in the same way as yahoo finance does - run a regression on 60 
 # recent monthly returns of SP500 and a given stock
 # -------------------------------------------------------------------------------------------------
+import numpy as np
 import pandas as pd
 from sklearn.linear_model import LinearRegression
 import sklearn.metrics as metrics
@@ -44,16 +45,17 @@ SP500_monthly['monthly return'] = SP500_monthly['Close'].pct_change(periods=1)  
 stock_monthly = stock.resample('M').last()
 stock_monthly['monthly return'] = stock_monthly['Close'].pct_change(periods=1)
 
+new_df = pd.DataFrame(SP500_monthly['monthly return'])
+new_df = new_df.join(stock_monthly['monthly return'], lsuffix=' sp500',rsuffix=' stock')
+new_df.dropna(inplace=True)
+
 # Find beta by directly estimating cov(stock, sp500) and var(sp500)
-stacked_mat = np.stack((stock_monthly['monthly return'].values[1:], SP500_monthly['monthly return'].values[1:]), axis=0)
+stacked_mat = np.stack((new_df['monthly return stock'].values[1:], new_df['monthly return sp500'].values[1:]), axis=0)
 cov_mat = np.cov(stacked_mat)
 beta = cov_mat[0,1]/cov_mat[1,1]
 print("Directly estimated beta:", beta)
 
 # Perform regression and find beta
-new_df = pd.DataFrame(SP500_monthly['monthly return'])
-new_df = new_df.join(stock_monthly['monthly return'], lsuffix=' sp500',rsuffix=' stock')
-new_df.dropna(inplace=True)
 model = LinearRegression()
 x = new_df['monthly return sp500'].values[1:].reshape((-1,1))
 y = new_df['monthly return stock'].values[1:]
