@@ -148,4 +148,4 @@ if not args.sector:
     sns.catplot(y='sector', x='return per risk', data=risk_return, kind='box', orient='h')
     sns.catplot(y='sector', x='beta', data=risk_return, kind='box', orient='h')
 
-plt.show()
+tlt.show()

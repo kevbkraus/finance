@@ -30,7 +30,7 @@ parser.add_argument('-r', '--sample_size', help='Sample size. If not supplied, a
 help_text = """Forcefully update non-price data (Ex. net income). If not supplied, preexising (possibly outdated)
                data will be used when available """ 
 parser.add_argument('-f', '--update_data', help=help_text)
-parser.add_argument('statement', help="income_statement or balance_sheet", choices=['income_statement', 'balance_sheet'])
+parser.add_argument('statement', help="income_statement or balance_sheet or cashflow", choices=['income_statement', 'balance_sheet', 'cashflow'])
 
 args = parser.parse_args()
 if args.ticker:                 # If the user explicityly gives ticker symbol, then sector, update_data, sample_size are irrelevant 
@@ -53,11 +53,14 @@ else:
 if args.statement == 'income_statement':
     subfolder = 'income_statements'
     av_function = 'INCOME_STATEMENT'
-else:   # This is the only other possibility because argparser already restritics the -
-        # choices and produces error if user gives something outside that
+elif args.statement == 'balance_sheet':
     subfolder = 'balance_sheets'
     av_function = 'BALANCE_SHEET'
-
+else:   # This is the only other possibility because argparser already restritics the -
+        # choices and produces error if user gives something outside that
+    subfolder = 'cashflow_statements'
+    av_function = 'CASH_FLOW' 
+    
 # Main code
 count = 0
 curr_t = datetime.now()
