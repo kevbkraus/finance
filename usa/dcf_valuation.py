@@ -70,7 +70,7 @@ erp = 4.31 # %. Equity risk premium for USA
 tax = 25 # %. Tax rate. One can use effective or marginal. This changes based on state of registration.-
          # But we will use a single figure that stands for all states. 
 steady_beta = 1 # no unit. Beta to be used for the steady growth stage 
-
+steady_state_roic = 0.1 # NOTE: This is an assumption that may need to change from time to time. So keep reevaluating 
 
 # Get beta to use from adamodaran's xls
 tempdf = pd.read_excel('/home/dinesh/Documents/Valuations/adamodaran/betas.xls', 'Industry Averages', skiprows=9, index_col=0)
@@ -245,7 +245,7 @@ for i in range(0, iter_len):
         continue 
     if fundamentals.loc[i,'opinc'] < 0: # We don't want to consider years where they incurred a loss
         continue
-    rirs.loc[free_index] = reinvestments[i]/(fundamentals.loc[i,'opinc']*(1-tax))
+    rirs.loc[free_index] = reinvestments[i]/(fundamentals.loc[i,'opinc']*(1-tax/100))
     free_index = free_index+1
 
 if len(rirs) < 3: # We are overall examining 5 historic years and one ttm
@@ -262,7 +262,7 @@ synthetic_rating = pd.DataFrame({'int_cov_ratio': pd.Series([], dtype=float),
                                  'spread': pd.Series([], dtype=float)})
 t_int_cov_ratio = [-np.inf, 0.2, 0.65, 0.8, 1.25, 1.5, 1.75, 2, 2.25, 2.5, 3, 4.25, 5.5, 6.5, 8.5] # 't' prefix for 'table'
 t_rating = ['D2/D', 'C2/C', 'Ca2/CC', 'Caa/CCC', 'B3/B-', 'B2/B', 'B1/B+', 'Ba2/BB', 'Ba1/BB+', 'Baa2/BBB', 'A3/A-', 'A2/A', 'A1/A+', 'Aa2/AA', 'Aaa/AAA']
-t_spread = [17.44, 13.09, 9.97, 9.46, 5.94, 4.86, 4.05, 2.77, 2.31, 1.71, 1.33, 1.18, 1.07, 0.85, 0.69]
+t_spread = [17.44, 13.09, 9.97, 9.46, 5.94, 4.86, 4.05, 2.77, 2.31, 1.71, 1.33, 1.18, 1.07, 0.85, 0.69] # percentage
 synthetic_rating = pd.DataFrame({'int_cov_ratio':t_int_cov_ratio, 'rating':t_rating, 'spread':t_spread})
 
 int_cov_ratios = pd.Series(dtype=float)
@@ -281,23 +281,68 @@ int_cov_ratio = int_cov_ratios.mean()
 temp = synthetic_rating['int_cov_ratio'] < int_cov_ratio # Results in a logical series
 rating_index = len(temp[temp])-1
 spread = synthetic_rating.loc[rating_index, 'spread']
-cost_of_debt = rfr + spread
+cost_of_debt = rfr + spread # percentage
 
 ## Find cost of equity
 bv_debt = fundamentals.loc[0, 'debt']
-levered_beta = unlevered_beta*(1 + (1-tax)*bv_debt/mv_equity)
-cost_of_equity = rfr + levered_beta*erp
+levered_beta = unlevered_beta*(1 + (1-tax/100)*bv_debt/mv_equity)
+cost_of_equity = rfr + levered_beta*erp # percentage
 
 ## Find WACC
-wacc = (mv_equity/(mv_equity + bv_debt))*cost_of_equity + (bv_debt/(mv_equity + bv_debt))*(1-tax)*cost_of_debt
+wacc = (mv_equity/(mv_equity + bv_debt))*cost_of_equity + (bv_debt/(mv_equity + bv_debt))*(1-tax/100)*cost_of_debt
 
 # -------------------------------------------- DCF calculation -------------------------------------------------------------------
 # We use a growth ramp down model where we get from current growth to growth rate of economy (as decided by risk free rate, and 
 # then settle for growth at the rate of risk free rate
 # --------------------------------------------------------------------------------------------------------------------------------
+num_extord_years = int((roic*rir*100-rfr)/3)+3 # We assume that growth will go down a slow 3 percentage points per year to reach 
+                                               # the growth rate of the economy as determined by the risk free rate. The y-intercept
+                                               # value of 3 is chosen arbitrarily for now. One should however look at hisotric figures
+                                               # what should be the slope as well as the y-intercept
+pv_df = pd.DataFrame({  'year': pd.Series([], dtype=int),
+                        'post_tax_opinc': pd.Series([], dtype=float), 
+                        'roic': pd.Series([], dtype=float), 
+                        'rir': pd.Series([], dtype=float), 
+                        'growth': pd.Series([], dtype=float), 
+                        'fcff': pd.Series([], dtype=float), 
+                        'pv': pd.Series([], dtype=float) })
 
+fyear = fundamentals.loc[0,'date'].year
+post_tax_opinc = fundamentals.loc[0, 'opinc']*(1-tax/100)
+fcff = post_tax_opinc - reinvestments[0]
+pv = np.nan
+steady_state_rir = (rfr/100)/steady_state_roic
+    
+pv_df.loc[0, 'year'] = fyear
+pv_df.loc[0, 'post_tax_opinc'] = post_tax_opinc
+pv_df.loc[0, 'roic'] = roic*100
+pv_df.loc[0, 'rir'] = rir*100
+pv_df.loc[0, 'growth'] = roic*rir*100
+pv_df.loc[0, 'fcff'] = fcff
+pv_df.loc[0, 'pv'] = pv
+for i in range(1, num_extord_years+2):
+    fyear = fyear+1
+    post_tax_opinc = post_tax_opinc*(1+roic*rir)
+    roic = (steady_state_roic - roic)/(num_extord_years+1 - (i-1)) + roic # (y2-y1)/(x2-x1)  * (x-x1) + y1, except, x-x1 is always 1 (year)    
+    rir = (steady_state_rir - rir)/(num_extord_years+1 - (i-1)) + rir # (y2-y1)/(x2-x1)  * (x-x1) + y1, except, x-x1 is always 1 (year)    
+    fcff = post_tax_opinc*(1-rir)
+    if i != num_extord_years+1:
+        pv = fcff/(1+wacc/100)**i
+    else:
+        pv = (fcff/(erp/100))/(1+wacc/100)**(i-1)
 
-
+    pv_df.loc[i, 'year'] = fyear
+    pv_df.loc[i, 'post_tax_opinc'] = post_tax_opinc
+    pv_df.loc[i, 'roic'] = roic*100
+    pv_df.loc[i, 'rir'] = rir*100
+    pv_df.loc[i, 'growth'] = roic*rir*100
+    pv_df.loc[i, 'fcff'] = fcff
+    pv_df.loc[i, 'pv'] = pv
+ 
+op_asset_value = pv_df.pv.sum()
+firm_value = op_asset_value + fundamentals.loc[0, 'cash']
+equity_value = firm_value - fundamentals.loc[0, 'debt']
+vps = (equity_value*1E6)/outstanding_shares   
 
 
 
