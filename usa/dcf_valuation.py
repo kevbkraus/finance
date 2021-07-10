@@ -52,15 +52,20 @@ def get_statements(symbol):
 msg = "Carries out DCF based valuation of a company"
 parser = argparse.ArgumentParser(description=msg)
 parser.add_argument('symbol', help="ticker symbol")
-parser.add_argument('-i', '--industry', help="Name of the industry according to adamodaran betas.xls")
+parser.add_argument('--industry', required=True, help="Name of the industry according to adamodaran betas.xls")
 
 args = parser.parse_args()
 
-# Get latest information related to risk free rate
+print('sys.argv = ', sys.argv)
 
+# Parameters
+AV_URL = "https://www.alphavantage.co/query"
+AV_KEY = os.environ.get('ALPHAVANTAGE_API_KEY')
+
+# Get latest information related to risk free rate
+rfr = quandl.get('USTREASURY/YIELD').iloc[-1]['10 YR'] # %. Risk free rate for USA. We use the latest 10 year treasury yield.
 
 # In-code input parameters
-rfr = quandl.get('USTREASURY/YIELD').iloc[-1]['10 YR'] # %. Risk free rate for USA. We use the latest 10 year treasury yield.
 erp = 4.31 # %. Equity risk premium for USA
 tax = 25 # %. Tax rate. One can use effective or marginal. This changes based on state of registration.-
          # But we will use a single figure that stands for all states. 
@@ -69,10 +74,10 @@ steady_beta = 1 # no unit. Beta to be used for the steady growth stage
 
 # Get beta to use from adamodaran's xls
 tempdf = pd.read_excel('/home/dinesh/Documents/Valuations/adamodaran/betas.xls', 'Industry Averages', skiprows=9, index_col=0)
-unlevered_beta = tempdf.loc['Advertising']['Unlevered beta corrected for cash']
+unlevered_beta = tempdf.loc[args.industry]['Unlevered beta corrected for cash']
 
 # Get market cap, outstanding shares and stock price
-query_params = { "function": 'OVERVIEW', "symbol": symbol, "apikey": AV_KEY}
+query_params = { "function": 'OVERVIEW', "symbol": args.symbol, "apikey": AV_KEY}
 response = (requests.get(AV_URL, params=query_params)).json()
 mv_equity = int(response['MarketCapitalization'])
 outstanding_shares = int(response['SharesOutstanding'])
@@ -85,7 +90,7 @@ price = float(response['200DayMovingAverage'])
 consolidated_prices_folder = '/home/dinesh/Documents/security_prices/usa'
 
 # Process balance sheet
-filename = consolidated_prices_folder + '/balance_sheets/' + symbol + '_quarterly.csv'
+filename = consolidated_prices_folder + '/balance_sheets/' + args.symbol + '_quarterly.csv'
 try:
     bsheetq = pd.read_csv(filename, parse_dates=['fiscalDateEnding'])
 except Exception as e:
@@ -93,7 +98,7 @@ except Exception as e:
     sys.exit()  # Return an empty dataframe 
 
 # Process income statements
-filename = consolidated_prices_folder + '/income_statements/' + symbol + '_quarterly.csv'
+filename = consolidated_prices_folder + '/income_statements/' + args.symbol + '_quarterly.csv'
 try:
     incstmtq = pd.read_csv(filename, parse_dates=['fiscalDateEnding'])
 except Exception as e:
@@ -105,7 +110,7 @@ inc_ttm['fiscalDateEnding'] = incstmtq.loc[0, 'fiscalDateEnding'] # Date and cur
 inc_ttm['reportedCurrency'] = incstmtq.loc[0, 'reportedCurrency'] #. So correct them to sensible values
 
 # Process cashflow statement
-filename = consolidated_prices_folder + '/cashflow_statements/' + symbol + '_quarterly.csv'
+filename = consolidated_prices_folder + '/cashflow_statements/' + args.symbol + '_quarterly.csv'
 try:
     cashflowstmtq = pd.read_csv(filename, parse_dates=['fiscalDateEnding'])
 except Exception as e:
@@ -117,21 +122,21 @@ cashflow_ttm['fiscalDateEnding'] = cashflowstmtq.loc[0, 'fiscalDateEnding'] # Da
 cashflow_ttm['reportedCurrency'] = cashflowstmtq.loc[0, 'reportedCurrency'] #. So correct them to sensible values
 
 # Bring in annual statments so we can extract historical data
-filename = consolidated_prices_folder + '/balance_sheets/' + symbol + '_annual.csv'
+filename = consolidated_prices_folder + '/balance_sheets/' + args.symbol + '_annual.csv'
 try:
     bsheet = pd.read_csv(filename, parse_dates=['fiscalDateEnding'])
 except Exception as e:
     print("Unexpected error while trying to open", filename, ". Error: ", e)
     sys.exit()  # Return an empty dataframe 
 
-filename = consolidated_prices_folder + '/income_statements/' + symbol + '_annual.csv'
+filename = consolidated_prices_folder + '/income_statements/' + args.symbol + '_annual.csv'
 try:
     incstmt = pd.read_csv(filename, parse_dates=['fiscalDateEnding'])
 except Exception as e:
     print("Unexpected error while trying to open", filename, ". Error: ", e)
     sys.exit()  # Return an empty dataframe 
 
-filename = consolidated_prices_folder + '/cashflow_statements/' + symbol + '_annual.csv'
+filename = consolidated_prices_folder + '/cashflow_statements/' + args.symbol + '_annual.csv'
 try:
     cashflow = pd.read_csv(filename, parse_dates=['fiscalDateEnding'])
 except Exception as e:
@@ -139,7 +144,7 @@ except Exception as e:
     sys.exit()  # Return an empty dataframe
 
 # Do sanity check
-if not (inc_ttm.fiscalDateEnding == bsheetq.iloc[1].fiscalDateEnding == cashflow_ttm.fiscalDateEnding):
+if not (inc_ttm.fiscalDateEnding == bsheetq.iloc[0].fiscalDateEnding == cashflow_ttm.fiscalDateEnding):
     print("Error: Dates on TTM statements aren't matching")
     sys.exit()
 
@@ -157,7 +162,7 @@ fundamentals.loc[0, 'date'] = bsheetq.loc[0, 'fiscalDateEnding']
 fundamentals.loc[0, 'cash'] = bsheetq.loc[0, 'cashAndShortTermInvestments']/1E6 + bsheetq.loc[0, 'longTermInvestments']/1E6
 fundamentals.loc[0, 'equity'] = bsheetq.loc[0, 'totalShareholderEquity']/1E6
 fundamentals.loc[0, 'debt'] = bsheetq.loc[0, 'currentDebt']/1E6 + bsheetq.loc[0, 'longTermDebtNoncurrent']/1E6
-if pd.isna(inc_ttm.['nonInterestIncome']) or inc_ttm['nonInterestIncome'] < 0:
+if pd.isna(inc_ttm['nonInterestIncome']) or inc_ttm['nonInterestIncome'] < 0:
     fundamentals.loc[0, 'revenue'] = inc_ttm['totalRevenue']/1E6    # For whatever reason, Alpha Vantage seems to have changed the definition of - 
 else:                                                               # some revenue related terms post 2017
     fundamentals.loc[0, 'revenue'] = inc_ttm['nonInterestIncome']/1E6
@@ -198,7 +203,7 @@ for i in range(0,len(bsheet.index)):
 # 5 year historic data, and use 5 year straight line depreciation, no historic data can be used for fiding ROIC, reinvestment
 # rate, because for oldest 4 years, we cannot get accurate depreciated R&D values simply because we don't have R&D data from 
 # the past before the 5-years data we have
-if any fundamentals['RnD'] < 0: # Sanity check
+if any(fundamentals['RnD'] < 0): # Sanity check
     print('Error: R&D expense cannot be negative')
     sys.exit()
 
@@ -214,15 +219,15 @@ fundamentals['netcapex'] = fundamentals['netcapex'] + fundamentals['RnD'] - RnD_
 # Calculate ROIC
 invested_capitals = fundamentals['equity']+fundamentals['debt']-fundamentals['cash']
 roics = pd.Series(dtype=float)
-roics[0] = fundamentals.loc[0,'opinc']*(1-tax/100)*2/(invested_capitals[1]+invested_capitals[2]) # For calculating ROIC of TTM, we are taking a shortcut: We -
-                                                                                           # are using the average invested capital of the previous -
-                                                                                           # financial year and the current - instead of finding the 
-                                                                                           # BVs of equity, debt, cash of the correct quarter 12 months
-                                                                                           # ago, adjusting for R&D etc.
+roics.loc[0] = fundamentals.loc[0,'opinc']*(1-tax/100)*2/(invested_capitals[1]+invested_capitals[2]) # For calculating ROIC of TTM, we are taking a shortcut: We -
+                                                                                                     # are using the average invested capital of the previous -
+                                                                                                     # financial year and the current - instead of finding the 
+                                                                                                     # BVs of equity, debt, cash of the correct quarter 12 months
+                                                                                                     # ago, adjusting for R&D etc.
 
 iter_len = 5 if len(fundamentals) > 6 else len(fundamentals)-1 # We don't want to consider anything older than 5 years
 for i in range(1,iter_len): # We skip the last one as we don't have information about invested capital before the oldest year
-    roics[i] =  fundamentals[i,'opinc']*(1-tax/100)/invested_capitals.loc[i+1]
+    roics.loc[i] =  fundamentals.loc[i,'opinc']*(1-tax/100)/invested_capitals.loc[i+1]
 
 roics_pos = pd.Series([x for x in roics if x>0]) # Extract only positive ROIC values
 if len(roics_pos) < 4: # We are overall examining 5 historic years and one ttm
@@ -240,19 +245,51 @@ for i in range(0, iter_len):
         continue 
     if fundamentals.loc[i,'opinc'] < 0: # We don't want to consider years where they incurred a loss
         continue
-
-    rirs[free_index] = reinvestments[i]/(fundamentals.loc[i,'opinc']*(1-tax))
+    rirs.loc[free_index] = reinvestments[i]/(fundamentals.loc[i,'opinc']*(1-tax))
     free_index = free_index+1
 
 if len(rirs) < 3: # We are overall examining 5 historic years and one ttm
     rir = 0
 else:
-    rir = stats.gmean(rirs)
+    rir = rirs.mean()
 
 # -------------------------------------------- Calculate Weighted Average Cost of Capital ---------------------------------------
-# We use synthetic bond rating to find cost of debt, and use BV of debt in place of MV of debt
+# We use synthetic bond rating (based on interest coverage ratio) to find cost of debt, and use BV of debt in place of MV of debt
 # -------------------------------------------------------------------------------------------------------------------------------
+## Find cost of debt
+synthetic_rating = pd.DataFrame({'int_cov_ratio': pd.Series([], dtype=float), 
+                                 'rating': pd.Series([], dtype=str), 
+                                 'spread': pd.Series([], dtype=float)})
+t_int_cov_ratio = [-np.inf, 0.2, 0.65, 0.8, 1.25, 1.5, 1.75, 2, 2.25, 2.5, 3, 4.25, 5.5, 6.5, 8.5] # 't' prefix for 'table'
+t_rating = ['D2/D', 'C2/C', 'Ca2/CC', 'Caa/CCC', 'B3/B-', 'B2/B', 'B1/B+', 'Ba2/BB', 'Ba1/BB+', 'Baa2/BBB', 'A3/A-', 'A2/A', 'A1/A+', 'Aa2/AA', 'Aaa/AAA']
+t_spread = [17.44, 13.09, 9.97, 9.46, 5.94, 4.86, 4.05, 2.77, 2.31, 1.71, 1.33, 1.18, 1.07, 0.85, 0.69]
+synthetic_rating = pd.DataFrame({'int_cov_ratio':t_int_cov_ratio, 'rating':t_rating, 'spread':t_spread})
 
+int_cov_ratios = pd.Series(dtype=float)
+free_index = 0
+for i in range(0, iter_len):
+    if fundamentals.loc[i,'opinc'] < 0: # We don't want to consider years where they incurred a loss
+        continue
+    int_cov_ratios.loc[free_index] = fundamentals.loc[i, 'opinc']/fundamentals.loc[i, 'intexp']
+    free_index = free_index+1
+
+if len(int_cov_ratios) < 4:
+    print('Error: This company has too many loss years')
+    sys.exit()
+
+int_cov_ratio = int_cov_ratios.mean()
+temp = synthetic_rating['int_cov_ratio'] < int_cov_ratio # Results in a logical series
+rating_index = len(temp[temp])-1
+spread = synthetic_rating.loc[rating_index, 'spread']
+cost_of_debt = rfr + spread
+
+## Find cost of equity
+bv_debt = fundamentals.loc[0, 'debt']
+levered_beta = unlevered_beta*(1 + (1-tax)*bv_debt/mv_equity)
+cost_of_equity = rfr + levered_beta*erp
+
+## Find WACC
+wacc = (mv_equity/(mv_equity + bv_debt))*cost_of_equity + (bv_debt/(mv_equity + bv_debt))*(1-tax)*cost_of_debt
 
 # -------------------------------------------- DCF calculation -------------------------------------------------------------------
 # We use a growth ramp down model where we get from current growth to growth rate of economy (as decided by risk free rate, and 
