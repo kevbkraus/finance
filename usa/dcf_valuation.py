@@ -34,9 +34,11 @@ import sys
 import errno
 import time
 from datetime import datetime
+from datetime import date
 from tqdm import tqdm, trange
 import argparse
 import quandl
+from openpyxl import load_workbook
 
 def get_statements(symbol):
     AV_URL = "https://www.alphavantage.co/query"
@@ -69,8 +71,6 @@ rfr = quandl.get('USTREASURY/YIELD').iloc[-1]['10 YR'] # %. Risk free rate for U
 erp = 4.31 # %. Equity risk premium for USA
 tax = 25 # %. Tax rate. One can use effective or marginal. This changes based on state of registration.-
          # But we will use a single figure that stands for all states. 
-steady_beta = 1 # no unit. Beta to be used for the steady growth stage 
-steady_state_roic = 0.1 # NOTE: This is an assumption that may need to change from time to time. So keep reevaluating 
 
 # Get beta to use from adamodaran's xls
 tempdf = pd.read_excel('/home/dinesh/Documents/Valuations/adamodaran/betas.xls', 'Industry Averages', skiprows=9, index_col=0)
@@ -158,7 +158,7 @@ if not (all(bsheet['fiscalDateEnding'] == incstmt['fiscalDateEnding']) and all(i
 # --------------------------------------------------------------------------------------------------------------------------------
 fundamentals = pd.DataFrame(columns=['date', 'cash', 'equity', 'debt', 'revenue', 'RnD', 'opinc', 'intexp', 'netinc', 'netcapex', 'changeinwc'])
 
-fundamentals.loc[0, 'date'] = bsheetq.loc[0, 'fiscalDateEnding'] 
+fundamentals.loc[0, 'date'] = bsheetq.loc[0, 'fiscalDateEnding'].date() 
 fundamentals.loc[0, 'cash'] = bsheetq.loc[0, 'cashAndShortTermInvestments']/1E6 + bsheetq.loc[0, 'longTermInvestments']/1E6
 fundamentals.loc[0, 'equity'] = bsheetq.loc[0, 'totalShareholderEquity']/1E6
 fundamentals.loc[0, 'debt'] = bsheetq.loc[0, 'currentDebt']/1E6 + bsheetq.loc[0, 'longTermDebtNoncurrent']/1E6
@@ -177,7 +177,7 @@ fundamentals.loc[0, 'changeinwc'] = cashflow_ttm['changeInInventory']/1E6 + cash
                                     - (bsheetq.loc[0, 'currentAccountsPayable']/1E6 - bsheet.loc[0, 'currentAccountsPayable']/1E6)
 
 for i in range(0,len(bsheet.index)): 
-    fundamentals.loc[i+1, 'date'] = bsheet.loc[i, 'fiscalDateEnding'] 
+    fundamentals.loc[i+1, 'date'] = bsheet.loc[i, 'fiscalDateEnding'].date() 
     fundamentals.loc[i+1, 'cash'] = bsheet.loc[i, 'cashAndShortTermInvestments']/1E6 + bsheet.loc[i, 'longTermInvestments']/1E6
     fundamentals.loc[i+1, 'equity'] = bsheet.loc[i, 'totalShareholderEquity']/1E6
     fundamentals.loc[i+1, 'debt'] = bsheet.loc[i, 'currentDebt']/1E6 + bsheet.loc[i, 'longTermDebtNoncurrent']/1E6
@@ -253,6 +253,7 @@ if len(rirs) < 3: # We are overall examining 5 historic years and one ttm
 else:
     rir = rirs.mean()
 
+
 # -------------------------------------------- Calculate Weighted Average Cost of Capital ---------------------------------------
 # We use synthetic bond rating (based on interest coverage ratio) to find cost of debt, and use BV of debt in place of MV of debt
 # -------------------------------------------------------------------------------------------------------------------------------
@@ -291,61 +292,122 @@ cost_of_equity = rfr + levered_beta*erp # percentage
 ## Find WACC
 wacc = (mv_equity/(mv_equity + bv_debt))*cost_of_equity + (bv_debt/(mv_equity + bv_debt))*(1-tax/100)*cost_of_debt
 
+
 # -------------------------------------------- DCF calculation -------------------------------------------------------------------
 # We use a growth ramp down model where we get from current growth to growth rate of economy (as decided by risk free rate, and 
 # then settle for growth at the rate of risk free rate
 # --------------------------------------------------------------------------------------------------------------------------------
-num_extord_years = int((roic*rir*100-rfr)/3)+3 # We assume that growth will go down a slow 3 percentage points per year to reach 
-                                               # the growth rate of the economy as determined by the risk free rate. The y-intercept
-                                               # value of 3 is chosen arbitrarily for now. One should however look at hisotric figures
-                                               # what should be the slope as well as the y-intercept
-pv_df = pd.DataFrame({  'year': pd.Series([], dtype=int),
-                        'post_tax_opinc': pd.Series([], dtype=float), 
-                        'roic': pd.Series([], dtype=float), 
-                        'rir': pd.Series([], dtype=float), 
-                        'growth': pd.Series([], dtype=float), 
-                        'fcff': pd.Series([], dtype=float), 
-                        'pv': pd.Series([], dtype=float) })
+output_filename = '/home/dinesh/Documents/Valuations/usa/' + args.symbol + '.xlsx'
+writer = pd.ExcelWriter(output_filename, engine = 'openpyxl')
 
-fyear = fundamentals.loc[0,'date'].year
-post_tax_opinc = fundamentals.loc[0, 'opinc']*(1-tax/100)
-fcff = post_tax_opinc - reinvestments[0]
-pv = np.nan
-steady_state_rir = (rfr/100)/steady_state_roic
+steady_state_roic = 0.1 # NOTE: This is an assumption that may need to change from time to time. So keep reevaluating 
+
+value_df = pd.DataFrame(columns=['gslope=3', 'gslope=5', 'gslope=7'], index=['ssBeta=0.8','ssBeta=1', 'ssBeta=1.2'])
+
+sheetmaxrow = 1
+index_num = 0
+for ssbeta in [0.8, 1, 1.2]:
+    col_num = 0
+    for gslope in [3, 5, 7]:
     
-pv_df.loc[0, 'year'] = fyear
-pv_df.loc[0, 'post_tax_opinc'] = post_tax_opinc
-pv_df.loc[0, 'roic'] = roic*100
-pv_df.loc[0, 'rir'] = rir*100
-pv_df.loc[0, 'growth'] = roic*rir*100
-pv_df.loc[0, 'fcff'] = fcff
-pv_df.loc[0, 'pv'] = pv
-for i in range(1, num_extord_years+2):
-    fyear = fyear+1
-    post_tax_opinc = post_tax_opinc*(1+roic*rir)
-    roic = (steady_state_roic - roic)/(num_extord_years+1 - (i-1)) + roic # (y2-y1)/(x2-x1)  * (x-x1) + y1, except, x-x1 is always 1 (year)    
-    rir = (steady_state_rir - rir)/(num_extord_years+1 - (i-1)) + rir # (y2-y1)/(x2-x1)  * (x-x1) + y1, except, x-x1 is always 1 (year)    
-    fcff = post_tax_opinc*(1-rir)
-    if i != num_extord_years+1:
-        pv = fcff/(1+wacc/100)**i
-    else:
-        pv = (fcff/(erp/100))/(1+wacc/100)**(i-1)
+        num_extord_years = int((roic*rir*100-rfr)/gslope)+3 # NOTE: The y-intercept value of 3 is chosen arbitrarily for now. One should 
+                                                            # however look at hisotric figures what should be the y-intercept
+        pv_df = pd.DataFrame({  'year': pd.Series([], dtype=int),
+                                'post_tax_opinc': pd.Series([], dtype=float), 
+                                'roic': pd.Series([], dtype=float), 
+                                'rir': pd.Series([], dtype=float), 
+                                'growth': pd.Series([], dtype=float), 
+                                'fcff': pd.Series([], dtype=float), 
+                                'pv': pd.Series([], dtype=float) })
+        
+        fyear = fundamentals.loc[0,'date'].year
+        post_tax_opinc = fundamentals.loc[0, 'opinc']*(1-tax/100)
+        fcff = post_tax_opinc - reinvestments[0]
+        pv = np.nan
+        iroic = roic
+        irir = rir
+        steady_state_rir = (rfr/100)/steady_state_roic
+            
+        pv_df.loc[0, 'year'] = fyear
+        pv_df.loc[0, 'post_tax_opinc'] = post_tax_opinc
+        pv_df.loc[0, 'roic'] = iroic*100
+        pv_df.loc[0, 'rir'] = irir*100
+        pv_df.loc[0, 'growth'] = iroic*irir*100
+        pv_df.loc[0, 'fcff'] = fcff
+        pv_df.loc[0, 'pv'] = pv
+        for i in range(1, num_extord_years+2):
+            fyear = fyear+1
+            post_tax_opinc = post_tax_opinc*(1+iroic*irir)
+            iroic = (steady_state_roic - iroic)/(num_extord_years+1 - (i-1)) + iroic # (y2-y1)/(x2-x1)  * (x-x1) + y1, except, x-x1 is always 1 (year)    
+            irir = (steady_state_rir - irir)/(num_extord_years+1 - (i-1)) + irir # (y2-y1)/(x2-x1)  * (x-x1) + y1, except, x-x1 is always 1 (year)    
+            fcff = post_tax_opinc*(1-irir)
+            if i != num_extord_years+1:
+                pv = fcff/(1+wacc/100)**i
+            else:
+                pv = (fcff/(ssbeta*erp/100))/(1+wacc/100)**(i-1)
+        
+            pv_df.loc[i, 'year'] = fyear
+            pv_df.loc[i, 'post_tax_opinc'] = post_tax_opinc
+            pv_df.loc[i, 'roic'] = iroic*100
+            pv_df.loc[i, 'rir'] = irir*100
+            pv_df.loc[i, 'growth'] = iroic*irir*100
+            pv_df.loc[i, 'fcff'] = fcff
+            pv_df.loc[i, 'pv'] = pv
+         
+        op_asset_value = pv_df.pv.sum()
+        firm_value = op_asset_value + fundamentals.loc[0, 'cash']
+        equity_value = firm_value - fundamentals.loc[0, 'debt']
+        vps = (equity_value*1E6)/outstanding_shares   
+        
+        value_df.iloc[[index_num],[col_num]] = vps
+        col_num = col_num+1
+        
+        dummy_df = pd.DataFrame([],columns=['ssBeta = ' + str(ssbeta) + ', gslope = ' + str(gslope)]) # Just to write a heading text to the excel sheet
+        
+        dummy_df.to_excel(writer, 'Details', index=False, startrow = sheetmaxrow)
+        pv_df.to_excel(writer, 'Details', index=False, startrow = writer.book['Details'].max_row)
+        sheetmaxrow = writer.book['Details'].max_row+2
 
-    pv_df.loc[i, 'year'] = fyear
-    pv_df.loc[i, 'post_tax_opinc'] = post_tax_opinc
-    pv_df.loc[i, 'roic'] = roic*100
-    pv_df.loc[i, 'rir'] = rir*100
-    pv_df.loc[i, 'growth'] = roic*rir*100
-    pv_df.loc[i, 'fcff'] = fcff
-    pv_df.loc[i, 'pv'] = pv
- 
-op_asset_value = pv_df.pv.sum()
-firm_value = op_asset_value + fundamentals.loc[0, 'cash']
-equity_value = firm_value - fundamentals.loc[0, 'debt']
-vps = (equity_value*1E6)/outstanding_shares   
+    index_num = index_num+1
+
+writer.save()
+writer.close()
 
 
+# ------------------------------------------------- Write data to a spreadsheet ---------------------------------------------------------------
+output_filename = '/home/dinesh/Documents/Valuations/usa/' + args.symbol + '.xlsx'
+book = load_workbook(output_filename)
+writer = pd.ExcelWriter(output_filename, engine = 'openpyxl')
+writer.book = book
+writer.sheets = dict((ws.title, ws) for ws in book.worksheets)
 
+top_df = pd.DataFrame([[args.symbol], [date.today()], ['USD'], [args.industry]],
+                      index = ['Symbol', 'Date', 'Currency', 'Industry'])  
+
+top_df.to_excel(writer,'Summary', header=False)
+
+rates_df = pd.DataFrame([['risk-free rate',rfr], ['equity risk premium',erp], ['tax',tax]], columns=['RATES','percentage'])
+rates_df.to_excel(writer, 'Summary', index=False, startrow = writer.book['Summary'].max_row+2)
+
+market_df = pd.DataFrame([['market cap',mv_equity], ['stock price',price], ['outstanding shares',outstanding_shares], 
+                          ['unlevered beta', unlevered_beta], ['debt rating', synthetic_rating.loc[rating_index,'rating']]], columns=['MARKET FIGURES',''])
+market_df.to_excel(writer, 'Summary', index=False, startrow = writer.book['Summary'].max_row+2)
+
+dummy_df = pd.DataFrame([],columns=['FUNDAMENTALS']) # Just to write a heading text to the excel sheet
+dummy_df.to_excel(writer, 'Summary', index=False, startrow = writer.book['Summary'].max_row+2)
+fundamentals.to_excel(writer, 'Summary', index=False, startrow = writer.book['Summary'].max_row)
+
+derived_df = pd.DataFrame([ ['levered beta', levered_beta], ['cost of equity',cost_of_equity], ['cost of debt', cost_of_debt], ['wacc',wacc],
+                            ['return on capital',pv_df.loc[0, 'roic']], ['reinv rate',pv_df.loc[0,'rir']], ['growth rate',pv_df.loc[0,'growth']] ],
+                            columns=['DERIVED FIGURES','percentage']) 
+derived_df.to_excel(writer, 'Summary', index=False, startrow = writer.book['Summary'].max_row+2)
+
+dummy_df = pd.DataFrame([],columns=['VPS MATRIX']) # Just to write a heading text to the excel sheet
+dummy_df.to_excel(writer, 'Summary', index=False, startrow = writer.book['Summary'].max_row+2)
+value_df.to_excel(writer, 'Summary', startrow = writer.book['Summary'].max_row)
+
+writer.save()
+writer.close()
 
 
 
