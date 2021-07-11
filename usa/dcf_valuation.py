@@ -31,6 +31,7 @@ from scipy import stats
 
 import os
 import sys
+import subprocess
 import errno
 import time
 from datetime import datetime
@@ -39,6 +40,7 @@ from tqdm import tqdm, trange
 import argparse
 import quandl
 from openpyxl import load_workbook
+
 
 def get_statements(symbol):
     AV_URL = "https://www.alphavantage.co/query"
@@ -79,14 +81,17 @@ unlevered_beta = tempdf.loc[args.industry]['Unlevered beta corrected for cash']
 # Get market cap, outstanding shares and stock price
 query_params = { "function": 'OVERVIEW', "symbol": args.symbol, "apikey": AV_KEY}
 response = (requests.get(AV_URL, params=query_params)).json()
+company_name = response['Name']
 mv_equity = int(response['MarketCapitalization'])
 outstanding_shares = int(response['SharesOutstanding'])
-price = float(response['200DayMovingAverage'])
-
+price = float(response['50DayMovingAverage'])
+analyst_target_price = float(response['AnalystTargetPrice'])
 
 # --------------------------- Get financial statements, create TTM and carry out sanity checks -----------------------------------
 # NOTE: This is a mundane process. One can skip to the next section which gets to the actual valuation part (look for dotted line)
 # --------------------------------------------------------------------------------------------------------------------------------
+get_statements(args.symbol) # Mandatorily update financial statements to the latest
+
 consolidated_prices_folder = '/home/dinesh/Documents/security_prices/usa'
 
 # Process balance sheet
@@ -410,6 +415,17 @@ writer.save()
 writer.close()
 
 
-
+# ---------------------------------------------------- Print out a summary ---------------------------------------------------------------------
+print('\n')
+print('------------------ VALUATION SUMMARY ----------------------')
+print('\n')
+print(company_name, '\n')
+print('Share price: ', price, '\n')
+print('Analyst target: ',analyst_target_price, '\n')
+print('VPS Matrix')
+print(value_df.to_markdown())
+print('\n Derived Figures')
+print(derived_df.to_markdown())
+print('-----------------------------------------------------------')
 
 
