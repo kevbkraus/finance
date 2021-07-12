@@ -61,7 +61,7 @@ def get_statements(symbol):
 # --------------------------------------------------------------------------------------------------------------------------------
 def get_fundamentals(symbol):
     consolidated_prices_folder = '/home/dinesh/Documents/security_prices/usa'
-    response = dict.fromkeys({'result', 'reason_for_failure', 'fundamentals'}) 
+    response = dict.fromkeys({'result', 'reason for failure', 'fundamentals'}) 
     response['result'] = 'failure' # Init this to failure so that if error occurs during execution, we can simply -
     
     # Process balance sheet
@@ -69,7 +69,7 @@ def get_fundamentals(symbol):
     try:
         bsheetq = pd.read_csv(filename, parse_dates=['fiscalDateEnding']).fillna(0)
     except Exception as e:
-        response['reason_for_failure'] = "Unexpected error while trying to open" + filename + ". Error: " + e
+        response['reason for failure'] = "Unexpected error while trying to open" + filename + ". Error: " + e
         return(response)  # Return an empty dataframe 
     
     # Process income statements
@@ -77,7 +77,7 @@ def get_fundamentals(symbol):
     try:
         incstmtq = pd.read_csv(filename, parse_dates=['fiscalDateEnding']).fillna(0)
     except Exception as e:
-        response['reason_for_failure'] = "Unexpected error while trying to open" + filename + ". Error: " + e
+        response['reason for failure'] = "Unexpected error while trying to open" + filename + ". Error: " + e
         return(response)  # Return an empty dataframe 
     
     inc_ttm = incstmtq.iloc[0:4].sum() # Sum up all items of latest 4 quarters 
@@ -89,7 +89,7 @@ def get_fundamentals(symbol):
     try:
         cashflowstmtq = pd.read_csv(filename, parse_dates=['fiscalDateEnding']).fillna(0)
     except Exception as e:
-        response['reason_for_failure'] = "Unexpected error while trying to open" + filename + ". Error: " + e
+        response['reason for failure'] = "Unexpected error while trying to open" + filename + ". Error: " + e
         return(response)  # Return an empty dataframe
     
     cashflow_ttm = cashflowstmtq.iloc[0:4].sum() # Sum up all items of latest 4 quarters 
@@ -101,30 +101,30 @@ def get_fundamentals(symbol):
     try:
         bsheet = pd.read_csv(filename, parse_dates=['fiscalDateEnding']).fillna(0)
     except Exception as e:
-        response['reason_for_failure'] = "Unexpected error while trying to open" + filename + ". Error: " + e
+        response['reason for failure'] = "Unexpected error while trying to open" + filename + ". Error: " + e
         return(response)  # Return an empty dataframe 
     
     filename = consolidated_prices_folder + '/income_statements/' + symbol + '_annual.csv'
     try:
         incstmt = pd.read_csv(filename, parse_dates=['fiscalDateEnding']).fillna(0)
     except Exception as e:
-        response['reason_for_failure'] = "Unexpected error while trying to open" + filename + ". Error: " + e
+        response['reason for failure'] = "Unexpected error while trying to open" + filename + ". Error: " + e
         return(response)  # Return an empty dataframe 
     
     filename = consolidated_prices_folder + '/cashflow_statements/' + symbol + '_annual.csv'
     try:
         cashflow = pd.read_csv(filename, parse_dates=['fiscalDateEnding']).fillna(0)
     except Exception as e:
-        response['reason_for_failure'] = "Unexpected error while trying to open" + filename + ". Error: " + e
+        response['reason for failure'] = "Unexpected error while trying to open" + filename + ". Error: " + e
         return(response)  # Return an empty dataframe
     
     # Do sanity check
     if not (inc_ttm.fiscalDateEnding == bsheetq.iloc[0].fiscalDateEnding == cashflow_ttm.fiscalDateEnding):
-        response['reason_for_failure'] = "Error: Dates on TTM statements aren't matching"
+        response['reason for failure'] = "Error: Dates on TTM statements aren't matching"
         return(response)
     
     if not (all(bsheet['fiscalDateEnding'] == incstmt['fiscalDateEnding']) and all(incstmt['fiscalDateEnding'] == cashflow['fiscalDateEnding'])):
-        response['reason_for_failure'] = "Error: Dates on yearly statements aren't matching"
+        response['reason for failure'] = "Error: Dates on yearly statements aren't matching"
         return(response)
         
     # ---------------------------------- Create a dataframe of selected financial data -----------------------------------------------
@@ -175,7 +175,7 @@ def get_fundamentals(symbol):
     return(response)        
 
 def value_company(symbol, industry, fundamentals):
-    super_response = dict.fromkeys({'result', 'reason_for_failure', 'Company name', 'Share price', 'Analyst target', 'PE', 'Debt rating', 'fundamentals', 'value_df'}) 
+    super_response = dict.fromkeys({'result', 'reason for failure', 'Company name', 'Share price', 'Analyst target', 'PE', 'Debt rating', 'fundamentals', 'value_df'}) 
     super_response['result'] = 'failure' # Init this to failure so that if error occurs during execution, we can simply -
                                          # return super_response     
 
@@ -205,6 +205,11 @@ def value_company(symbol, industry, fundamentals):
     analyst_target_price = float(response['AnalystTargetPrice'])
     pe_ratio = float(response['PERatio'])
     
+    super_response['Company name'] = company_name
+    super_response['Share price'] = price
+    super_response['Analyst target'] = analyst_target_price
+    super_response['PE'] = pe_ratio
+    
     # Capitalize R&D (with 5 year straight line depreciation)
     # We find the average R&D expense and depreciate them as operating expense. The reason we do this is that we are going to find 
     # ROIC and reinvestment rates for DCF valuation by averaging figures over several years in the past. But, we won't be able to 
@@ -213,7 +218,7 @@ def value_company(symbol, industry, fundamentals):
     # rate, because for oldest 4 years, we cannot get accurate depreciated R&D values simply because we don't have R&D data from 
     # the past before the 5-years data we have
     if any(fundamentals['RnD'] < 0): # Sanity check
-        super_response['reason_for_failure'] = 'Error: R&D expense cannot be negative'
+        super_response['reason for failure'] = 'Error: R&D expense cannot be negative'
         return(super_response)
     
     average_RnD = fundamentals['RnD'].mean()
@@ -240,7 +245,7 @@ def value_company(symbol, industry, fundamentals):
     
     roics_pos = pd.Series([x for x in roics if x>0]) # Extract only positive ROIC values
     if len(roics_pos) < 4: # We are overall examining 5 historic years and one ttm
-        super_response['reason_for_failure'] = 'Error: This company has too many loss years'
+        super_response['reason for failure'] = 'Error: This company has too many loss years'
         return(super_response)
     
     roic = stats.gmean(roics_pos.values)    # Geometric mean of positive ROIC values
@@ -284,7 +289,7 @@ def value_company(symbol, industry, fundamentals):
         free_index = free_index+1
     
     if len(int_cov_ratios) < 4:
-        super_response['reason_for_failure'] = 'Error: This company has too many loss years'
+        super_response['reason for failure'] = 'Error: This company has too many loss years'
         return(super_response)
     
     int_cov_ratio = int_cov_ratios.mean()
@@ -294,6 +299,8 @@ def value_company(symbol, industry, fundamentals):
     cost_of_debt = rfr + spread # percentage
     debt_rating = synthetic_rating.loc[rating_index, 'rating']
  
+    super_response['Debt rating'] = debt_rating 
+    
     ## Find cost of equity
     bv_debt = fundamentals.loc[0, 'debt']
     levered_beta = unlevered_beta*(1 + (1-tax/100)*bv_debt/mv_equity)
@@ -344,7 +351,7 @@ def value_company(symbol, industry, fundamentals):
             pv_df.loc[0, 'pv'] = pv
             if roic*rir < rfr/100: # If growth is already slower than risk free rate. Then treat this as a going concern
                 if fcff < 0: # If free cash flow for current year is negative and growth is below rfr, quit automatic valuation and settle for manual valuation
-                    super_response['reason_for_failure'] = 'Negative FCFF for base year'
+                    super_response['reason for failure'] = 'Negative FCFF for base year'
                     return(super_response)
                 op_asset_value = fcff*(1+roic*rir)/(wacc/100 - roic*rir)
             else: 
@@ -387,6 +394,7 @@ def value_company(symbol, industry, fundamentals):
     
     writer.save()
     writer.close()
+    super_response['value_df'] = value_df
     
     
     # ------------------------------------------------- Write data to a spreadsheet ---------------------------------------------------------------
@@ -441,12 +449,5 @@ def value_company(symbol, industry, fundamentals):
     print('-----------------------------------------------------------')
 
     super_response['result'] = 'success'
-    super_response['Company name'] = company_name
-    super_response['Share price'] = price
-    super_response['Analyst target'] = analyst_target_price
-    super_response['PE'] = pe_ratio
-    super_response['Debt rating'] = debt_rating 
-    super_response['value_df'] = value_df
-
     return(super_response)
     
