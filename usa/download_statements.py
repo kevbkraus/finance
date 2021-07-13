@@ -62,7 +62,7 @@ else:   # This is the only other possibility because argparser already restritic
     av_function = 'CASH_FLOW' 
     
 # Main code
-count = 0
+count = 0 
 curr_t = datetime.now()
 for symbol in tqdm(symbols, desc='Progress'):
     annual_stmt_filename = consolidated_prices_folder + '/' + subfolder + '/' + symbol + '_annual.csv'
@@ -76,7 +76,7 @@ for symbol in tqdm(symbols, desc='Progress'):
     
     try:
         response = (requests.get(AV_URL, params=query_params)).json()
-    except:
+    except Exception as e:
         time.sleep(60)
         continue    # We will lose the current symbol, but that is fine
         
@@ -86,6 +86,7 @@ for symbol in tqdm(symbols, desc='Progress'):
         continue
 
     if 'Note' in response: # This shouldn't happen. But we double check
+        print(response)
         time.sleep(60)
         continue    # We will lose the current symbol, but that is fine 
         
@@ -103,7 +104,7 @@ for symbol in tqdm(symbols, desc='Progress'):
     statement_quart.to_csv(quart_stmt_filename)
     
     count = count+1
-    if (datetime.now()-curr_t).total_seconds() < 60 and count%5 == 0:
+    if (datetime.now()-curr_t).total_seconds() < 60 and count%5 == 0: # Alpha vantage limit is 5 req per min
         time.sleep(60 - (datetime.now()-curr_t).total_seconds())
         curr_t = datetime.now()
 

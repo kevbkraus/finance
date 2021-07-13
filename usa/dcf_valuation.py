@@ -51,9 +51,15 @@ def get_statements(symbol):
 
     # NOTE: Alpha vantage always seems to give consolidated statements and not standalone. Net income figure seems to be net income attributable -
     # to controlling interest, which is the right thing to do
-    subp_resp = subprocess.run(['python3', 'download_statements.py', '-t', symbol, 'balance_sheet'], capture_output=True)
-    subp_resp = subprocess.run(['python3', 'download_statements.py', '-t', symbol, 'income_statement'], capture_output=True)
-    subp_resp = subprocess.run(['python3', 'download_statements.py', '-t', symbol, 'cashflow'], capture_output=True)
+    statements = ['balance_sheet', 'income_statement', 'cashflow']
+
+    for statement in statements:
+        subp_resp = subprocess.run(['python3', 'download_statements.py', '-t', symbol, statement], capture_output=True)
+        if 'Note' in str(subp_resp.stdout): # Alpha Vantage limit (5 req per min) reached. download_statements already waits of 60s.- 
+                                              # So just try one more time
+            print('AV limit reached. Trying one more time')
+            subp_resp = subprocess.run(['python3', 'download_statements.py', '-t', symbol, statement], capture_output=True)
+        
 
 
 # get_fundamentals ---------------------------------------------------------------------------------------------------------------
@@ -69,7 +75,7 @@ def get_fundamentals(symbol):
     try:
         bsheetq = pd.read_csv(filename, parse_dates=['fiscalDateEnding']).fillna(0)
     except Exception as e:
-        response['reason for failure'] = "Unexpected error while trying to open" + filename + ". Error: " + e
+        response['reason for failure'] = "Unexpected error while trying to open" + filename 
         return(response)  # Return an empty dataframe 
     
     # Process income statements
@@ -77,7 +83,7 @@ def get_fundamentals(symbol):
     try:
         incstmtq = pd.read_csv(filename, parse_dates=['fiscalDateEnding']).fillna(0)
     except Exception as e:
-        response['reason for failure'] = "Unexpected error while trying to open" + filename + ". Error: " + e
+        response['reason for failure'] = "Unexpected error while trying to open" + filename 
         return(response)  # Return an empty dataframe 
     
     inc_ttm = incstmtq.iloc[0:4].sum() # Sum up all items of latest 4 quarters 
@@ -89,7 +95,7 @@ def get_fundamentals(symbol):
     try:
         cashflowstmtq = pd.read_csv(filename, parse_dates=['fiscalDateEnding']).fillna(0)
     except Exception as e:
-        response['reason for failure'] = "Unexpected error while trying to open" + filename + ". Error: " + e
+        response['reason for failure'] = "Unexpected error while trying to open" + filename 
         return(response)  # Return an empty dataframe
     
     cashflow_ttm = cashflowstmtq.iloc[0:4].sum() # Sum up all items of latest 4 quarters 
@@ -101,30 +107,32 @@ def get_fundamentals(symbol):
     try:
         bsheet = pd.read_csv(filename, parse_dates=['fiscalDateEnding']).fillna(0)
     except Exception as e:
-        response['reason for failure'] = "Unexpected error while trying to open" + filename + ". Error: " + e
+        response['reason for failure'] = "Unexpected error while trying to open" + filename 
         return(response)  # Return an empty dataframe 
     
     filename = consolidated_prices_folder + '/income_statements/' + symbol + '_annual.csv'
     try:
         incstmt = pd.read_csv(filename, parse_dates=['fiscalDateEnding']).fillna(0)
     except Exception as e:
-        response['reason for failure'] = "Unexpected error while trying to open" + filename + ". Error: " + e
+        response['reason for failure'] = "Unexpected error while trying to open" + filename 
         return(response)  # Return an empty dataframe 
     
     filename = consolidated_prices_folder + '/cashflow_statements/' + symbol + '_annual.csv'
     try:
         cashflow = pd.read_csv(filename, parse_dates=['fiscalDateEnding']).fillna(0)
     except Exception as e:
-        response['reason for failure'] = "Unexpected error while trying to open" + filename + ". Error: " + e
+        response['reason for failure'] = "Unexpected error while trying to open" + filename 
         return(response)  # Return an empty dataframe
     
     # Do sanity check
     if not (inc_ttm.fiscalDateEnding == bsheetq.iloc[0].fiscalDateEnding == cashflow_ttm.fiscalDateEnding):
-        response['reason for failure'] = "Error: Dates on TTM statements aren't matching"
+        response['reason for failure'] = "Dates on TTM statements aren't matching"
         return(response)
-    
-    if not (all(bsheet['fiscalDateEnding'] == incstmt['fiscalDateEnding']) and all(incstmt['fiscalDateEnding'] == cashflow['fiscalDateEnding'])):
-        response['reason for failure'] = "Error: Dates on yearly statements aren't matching"
+  
+    statement_years = min(bsheet.shape[0], incstmt.shape[0], cashflow.shape[0]) # Sometimes one statment has more historical data than others  
+    if not (all(bsheet.loc[0:statement_years-1, 'fiscalDateEnding'] == incstmt.loc[0:statement_years-1, 'fiscalDateEnding']) and  # NOTE: loc and iloc work differently while fetching
+            all(incstmti.loc[0:statement_years-1, 'fiscalDateEnding'] == cashflow.loc[0:statement_years-1, 'fiscalDateEnding'])): # rows. loc[0:3 returns 4 rows, iloc[0:3 returns 3
+        response['reason for failure'] = "Dates on yearly statements aren't matching"
         return(response)
         
     # ---------------------------------- Create a dataframe of selected financial data -----------------------------------------------
@@ -151,7 +159,7 @@ def get_fundamentals(symbol):
     fundamentals.loc[0, 'changeinwc'] = cashflow_ttm['changeInInventory']/1E6 + cashflow_ttm['changeInReceivables']/1E6 \
                                         - (bsheetq.loc[0, 'currentAccountsPayable']/1E6 - bsheet.loc[0, 'currentAccountsPayable']/1E6)
     
-    for i in range(0,len(bsheet.index)): 
+    for i in range(0,statement_years): 
         fundamentals.loc[i+1, 'date'] = bsheet.loc[i, 'fiscalDateEnding'].date() 
         fundamentals.loc[i+1, 'cash'] = bsheet.loc[i, 'cashAndShortTermInvestments']/1E6 + bsheet.loc[i, 'longTermInvestments']/1E6
         fundamentals.loc[i+1, 'equity'] = bsheet.loc[i, 'totalShareholderEquity']/1E6
@@ -165,7 +173,7 @@ def get_fundamentals(symbol):
         fundamentals.loc[i+1, 'intexp'] = incstmt.loc[i, 'interestExpense']/1E6
         fundamentals.loc[i+1, 'netinc'] = incstmt.loc[i, 'netIncome']/1E6
         
-        if i != len(bsheet.index)-1: # For the last year there is no point in calculating the following
+        if i != statement_years-1: # For the last year there is no point in calculating the following
             fundamentals.loc[i+1, 'netcapex'] = cashflow.loc[i, 'capitalExpenditures']/1E6 - cashflow.loc[i, 'depreciationDepletionAndAmortization']/1E6
             fundamentals.loc[i+1, 'changeinwc'] = cashflow.loc[i, 'changeInInventory']/1E6 + cashflow.loc[i, 'changeInReceivables']/1E6 \
                                                 - (bsheet.loc[i, 'currentAccountsPayable']/1E6 - bsheet.loc[i+1, 'currentAccountsPayable']/1E6)
@@ -197,7 +205,12 @@ def value_company(symbol, industry, fundamentals):
     
     # Get market cap, outstanding shares and stock price
     query_params = { "function": 'OVERVIEW', "symbol": symbol, "apikey": AV_KEY}
-    response = (requests.get(AV_URL, params=query_params)).json()
+    response = pd.Series((requests.get(AV_URL, params=query_params)).json())
+    if response.empty: 
+        super_response['reason for failure'] = 'Empty response while trying to get overview of the stock'
+        return(super_response)
+        
+    response.replace('None',np.nan,inplace=True) # Otherwise trying to convert 'None' string to int or float (below) will throw an error
     company_name = response['Name']
     mv_equity = int(response['MarketCapitalization'])
     outstanding_shares = int(response['SharesOutstanding'])
@@ -218,7 +231,7 @@ def value_company(symbol, industry, fundamentals):
     # rate, because for oldest 4 years, we cannot get accurate depreciated R&D values simply because we don't have R&D data from 
     # the past before the 5-years data we have
     if any(fundamentals['RnD'] < 0): # Sanity check
-        super_response['reason for failure'] = 'Error: R&D expense cannot be negative'
+        super_response['reason for failure'] = 'R&D expense cannot be negative'
         return(super_response)
     
     average_RnD = fundamentals['RnD'].mean()
@@ -245,7 +258,7 @@ def value_company(symbol, industry, fundamentals):
     
     roics_pos = pd.Series([x for x in roics if x>0]) # Extract only positive ROIC values
     if len(roics_pos) < 4: # We are overall examining 5 historic years and one ttm
-        super_response['reason for failure'] = 'Error: This company has too many loss years'
+        super_response['reason for failure'] = 'This company has too many loss years'
         return(super_response)
     
     roic = stats.gmean(roics_pos.values)    # Geometric mean of positive ROIC values
@@ -289,7 +302,7 @@ def value_company(symbol, industry, fundamentals):
         free_index = free_index+1
     
     if len(int_cov_ratios) < 4:
-        super_response['reason for failure'] = 'Error: This company has too many loss years'
+        super_response['reason for failure'] = 'This company has too many loss years'
         return(super_response)
     
     int_cov_ratio = int_cov_ratios.mean()
@@ -404,8 +417,8 @@ def value_company(symbol, industry, fundamentals):
     writer.book = book
     writer.sheets = dict((ws.title, ws) for ws in book.worksheets)
     
-    top_df = pd.DataFrame([[symbol], [date.today()], ['USD'], [industry]],
-                          index = ['Symbol', 'Date', 'Currency', 'Industry'])  
+    top_df = pd.DataFrame([[company_name], [symbol], [date.today()], ['USD'], [industry]],
+                          index = ['Company name', 'Symbol', 'Date', 'Currency', 'Industry'])  
     
     top_df.to_excel(writer,'Summary', header=False)
     
@@ -438,6 +451,7 @@ def value_company(symbol, industry, fundamentals):
     print('------------------ VALUATION SUMMARY ----------------------')
     print('\n')
     print(company_name, '\n')
+    print('Industry: ', industry)
     print('Share price: ', price, '\n')
     print('Analyst target: ',analyst_target_price, '\n')
     print('PE: ', pe_ratio, '\n')
