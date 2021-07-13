@@ -131,7 +131,7 @@ def get_fundamentals(symbol):
   
     statement_years = min(bsheet.shape[0], incstmt.shape[0], cashflow.shape[0]) # Sometimes one statment has more historical data than others  
     if not (all(bsheet.loc[0:statement_years-1, 'fiscalDateEnding'] == incstmt.loc[0:statement_years-1, 'fiscalDateEnding']) and  # NOTE: loc and iloc work differently while fetching
-            all(incstmti.loc[0:statement_years-1, 'fiscalDateEnding'] == cashflow.loc[0:statement_years-1, 'fiscalDateEnding'])): # rows. loc[0:3 returns 4 rows, iloc[0:3 returns 3
+            all(incstmt.loc[0:statement_years-1, 'fiscalDateEnding'] == cashflow.loc[0:statement_years-1, 'fiscalDateEnding'])): # rows. loc[0:3 returns 4 rows, iloc[0:3 returns 3
         response['reason for failure'] = "Dates on yearly statements aren't matching"
         return(response)
         
