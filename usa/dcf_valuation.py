@@ -186,13 +186,13 @@ def value_company(symbol, industry, fundamentals):
     super_response = dict.fromkeys({'result', 'reason for failure', 'Company name', 'Share price', 'Analyst target', 'PE', 'Debt rating', 'fundamentals', 'value_df'}) 
     super_response['result'] = 'failure' # Init this to failure so that if error occurs during execution, we can simply -
                                          # return super_response     
-
+        
     # Parameters
     AV_URL = "https://www.alphavantage.co/query"
     AV_KEY = os.environ.get('ALPHAVANTAGE_API_KEY')
     
     # Get latest information related to risk free rate
-    rfr = quandl.get('USTREASURY/YIELD').iloc[-1]['10 YR'] # %. Risk free rate for USA. We use the latest 10 year treasury yield.
+    rfr = 1.42 # NOTE: Temp measure. Should put back to quandl.get('USTREASURY/YIELD').iloc[-1]['10 YR'] # %. Risk free rate for USA. We use the latest 10 year treasury yield.
     
     # In-code input parameters
     erp = 4.31 # %. Equity risk premium for USA
@@ -206,10 +206,15 @@ def value_company(symbol, industry, fundamentals):
     # Get market cap, outstanding shares and stock price
     query_params = { "function": 'OVERVIEW', "symbol": symbol, "apikey": AV_KEY}
     response = pd.Series((requests.get(AV_URL, params=query_params)).json())
+
     if response.empty: 
         super_response['reason for failure'] = 'Empty response while trying to get overview of the stock'
         return(super_response)
-        
+    
+    if 'Note' in response or 'Alpha Vantage' in str(response):
+        super_response['reason for failure'] = 'Alpha Vantage limit reached. Abandoning this company'
+        return(super_response)
+    
     response.replace('None',np.nan,inplace=True) # Otherwise trying to convert 'None' string to int or float (below) will throw an error
     company_name = response['Name']
     mv_equity = int(response['MarketCapitalization'])
@@ -222,6 +227,10 @@ def value_company(symbol, industry, fundamentals):
     super_response['Share price'] = price
     super_response['Analyst target'] = analyst_target_price
     super_response['PE'] = pe_ratio
+    
+    if fundamentals.shape[0] < 5: # At a min, we are expecting 4 historical years, plus the latest year/TTM
+        super_response['reason for failure'] = 'We do not have enough historic data to go about'
+        return(super_response)
     
     # Capitalize R&D (with 5 year straight line depreciation)
     # We find the average R&D expense and depreciate them as operating expense. The reason we do this is that we are going to find 
@@ -257,7 +266,7 @@ def value_company(symbol, industry, fundamentals):
         roics.loc[i] =  fundamentals.loc[i,'opinc']*(1-tax/100)/invested_capitals.loc[i+1]
     
     roics_pos = pd.Series([x for x in roics if x>0]) # Extract only positive ROIC values
-    if len(roics_pos) < 4: # We are overall examining 5 historic years and one ttm
+    if len(roics_pos) < 3: # We are overall examining 5 historic years and one ttm
         super_response['reason for failure'] = 'This company has too many loss years'
         return(super_response)
     

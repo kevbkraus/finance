@@ -9,6 +9,7 @@ from random import randint
 from openpyxl import load_workbook
 import os
 from datetime import date
+import time
 
 # Use exchange names to shortlist companies 
 # Throw away all the companies that are financial
@@ -25,7 +26,7 @@ losers_filename = '/home/dinesh/Documents/Valuations/usa/losers.xlsx'
 
 win_idx = 0
 lose_idx = 0
-num_stocks = 10
+num_stocks = 50
 for i in range(0,num_stocks): # Process 100 random stocks per run of this code
     random_index = randint(0, us_stocks.shape[0]-1)
     
@@ -37,9 +38,9 @@ for i in range(0,num_stocks): # Process 100 random stocks per run of this code
 
     print('Processing ', symbol)    
     
-    response = get_statements(symbol)
-    response = get_fundamentals(symbol)
-    if response['result'] == 'failure':
+    sresponse = get_statements(symbol)
+    fresponse = get_fundamentals(symbol)
+    if fresponse['result'] == 'failure':
         losers_df.loc[lose_idx, 'Company name'] = symbol # Workaround to the problem that we don't have the company name at this stage 
         losers_df.loc[lose_idx, 'Industry'] = industry
         losers_df.loc[lose_idx, 'Date'] = date.today()
@@ -47,7 +48,7 @@ for i in range(0,num_stocks): # Process 100 random stocks per run of this code
         losers_df.loc[lose_idx, 'Analyst target'] = np.nan
         losers_df.loc[lose_idx, 'PE'] = np.nan
         losers_df.loc[lose_idx, 'Debt rating'] = ''
-        losers_df.loc[lose_idx, 'reason for failure'] = response['reason for failure']
+        losers_df.loc[lose_idx, 'reason for failure'] = fresponse['reason for failure']
         lose_idx = lose_idx + 1
         print('Failed to process ', symbol)        
 
@@ -67,8 +68,11 @@ for i in range(0,num_stocks): # Process 100 random stocks per run of this code
             lose_idx = 0
         continue 
     
-    response = value_company(symbol, industry, response['fundamentals'])
-    
+    response = value_company(symbol, industry, fresponse['fundamentals'])
+    if response['result'] == 'failure' and 'Alpha Vantage' in response['reason for failure']:
+        time.sleep(60) # Wait 60 seconds and try one more time
+        response = value_company(symbol, industry, fresponse['fundamentals'])
+         
     if response['result'] == 'failure':
         losers_df.loc[lose_idx, 'Company name'] = response['Company name']
         losers_df.loc[lose_idx, 'Industry'] = industry
