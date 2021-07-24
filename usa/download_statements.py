@@ -53,20 +53,23 @@ else:
 if args.statement == 'income_statement':
     subfolder = 'income_statements'
     av_function = 'INCOME_STATEMENT'
+    file_suffix = 'IS'
 elif args.statement == 'balance_sheet':
     subfolder = 'balance_sheets'
     av_function = 'BALANCE_SHEET'
+    file_suffix = 'BS'
 else:   # This is the only other possibility because argparser already restritics the -
         # choices and produces error if user gives something outside that
     subfolder = 'cashflow_statements'
     av_function = 'CASH_FLOW' 
+    file_suffix = 'CF'
     
 # Main code
 count = 0 
 curr_t = datetime.now()
 for symbol in tqdm(symbols, desc='Progress'):
-    annual_stmt_filename = consolidated_prices_folder + '/' + subfolder + '/' + symbol + '_annual.csv'
-    quart_stmt_filename = consolidated_prices_folder + '/' + subfolder + '/' + symbol + '_quarterly.csv'
+    annual_stmt_filename = consolidated_prices_folder + '/' + subfolder + '/' + symbol + '_annual' + '_' + file_suffix + '.csv'
+    quart_stmt_filename = consolidated_prices_folder + '/' + subfolder + '/' + symbol + '_quarterly' + '_' + file_suffix + '.csv'
 
     if (not args.update_data) and os.path.exists(annual_stmt_filename): # if file already exists and 
                                                                         # forceful update is not enabled, skip to next symbol 

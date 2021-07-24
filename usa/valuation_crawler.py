@@ -19,8 +19,8 @@ us_stocks = indname_df[indname_df['Exchange:Ticker'].str.contains("Nasdaq|NYSE")
 us_stocks.reset_index(inplace=True) # Reset the index to start from 0 and increment sequentially (so they can be selected using a random number generator
 
 # Create two dataframes, one for companies that get successfully evaluated and one for companies which failed during valuation for whatever reason
-winners_df = pd.DataFrame(columns=['Company name', 'Industry', 'Date', 'Share price', 'Analyst target', 'PE', 'Debt rating', 'Min VPS', 'Avg VPS', 'Max VPS'])
-losers_df = pd.DataFrame(columns=['Company name', 'Industry', 'Date', 'Share price', 'Analyst target', 'PE', 'Debt rating', 'reason for failure'])
+winners_df = pd.DataFrame(columns=['Company name', 'Symbol', 'Industry', 'Date', 'Share price', 'Analyst target', 'PE', 'Debt rating', 'Min VPS', 'Avg VPS', 'Max VPS'])
+losers_df = pd.DataFrame(columns=['Company name', 'Symbol', 'Industry', 'Date', 'Share price', 'Analyst target', 'PE', 'Debt rating', 'reason for failure'])
 winners_filename = '/home/dinesh/Documents/Valuations/usa/winners.xlsx'
 losers_filename = '/home/dinesh/Documents/Valuations/usa/losers.xlsx'
 
@@ -42,6 +42,7 @@ for i in range(0,num_stocks): # Process 100 random stocks per run of this code
     fresponse = get_fundamentals(symbol)
     if fresponse['result'] == 'failure':
         losers_df.loc[lose_idx, 'Company name'] = symbol # Workaround to the problem that we don't have the company name at this stage 
+        losers_df.loc[lose_idx, 'Symbol'] = symbol 
         losers_df.loc[lose_idx, 'Industry'] = industry
         losers_df.loc[lose_idx, 'Date'] = date.today()
         losers_df.loc[lose_idx, 'Share price'] = np.nan
@@ -75,6 +76,7 @@ for i in range(0,num_stocks): # Process 100 random stocks per run of this code
          
     if response['result'] == 'failure':
         losers_df.loc[lose_idx, 'Company name'] = response['Company name']
+        losers_df.loc[lose_idx, 'Symbol'] = symbol 
         losers_df.loc[lose_idx, 'Industry'] = industry
         losers_df.loc[lose_idx, 'Date'] = date.today()
         losers_df.loc[lose_idx, 'Share price'] = response['Share price']
@@ -102,6 +104,7 @@ for i in range(0,num_stocks): # Process 100 random stocks per run of this code
     
     elif response['result'] == 'success':
         winners_df.loc[win_idx, 'Company name'] = response['Company name']
+        winners_df.loc[win_idx, 'Symbol'] = symbol 
         winners_df.loc[win_idx, 'Industry'] = industry
         winners_df.loc[win_idx, 'Date'] = date.today()
         winners_df.loc[win_idx, 'Share price'] = response['Share price']

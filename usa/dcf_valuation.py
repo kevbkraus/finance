@@ -15,6 +15,9 @@
 #    use MV of debt
 # 5. For WACC, we should use actual debt rating from one of the rating agencies. However, we use
 #    prof. Damodaran's synthetic rating method as finding the actual rating is impractical 
+# 6. Valuation is done without bringing in credit cycle/business cycle into picture. So companies
+#    whose earnings are traditionally married to the business cycle will be overvalued by quite a 
+#    bit by this code
 #
 # WARNING: Some explicit assumptions have been made about AlphaVantage data such as:
 # 1. The data fields are uniform across stocks. This is known to be not true! So for some stocks
@@ -65,7 +68,7 @@ def get_statements(symbol):
 # get_fundamentals ---------------------------------------------------------------------------------------------------------------
 #   Gets financial statements, creates TTM and carries out sanity checks 
 # --------------------------------------------------------------------------------------------------------------------------------
-def get_fundamentals(symbol):
+def get_fundamentals(symbol, debtmethod='method1', changeinwcmethod='usingcf'):
     consolidated_prices_folder = '/home/dinesh/Documents/security_prices/usa'
     response = dict.fromkeys({'result', 'reason for failure', 'fundamentals'}) 
     response['result'] = 'failure' # Init this to failure so that if error occurs during execution, we can simply -
@@ -125,6 +128,10 @@ def get_fundamentals(symbol):
         return(response)  # Return an empty dataframe
     
     # Do sanity check
+    statement_years = min(bsheetq.shape[0],incstmtq.shape[0], cashflowstmtq.shape[0]) # Sometimes one statment has more historical data than others  
+    if (statement_years < 5):
+        response['reason for failure'] = "Too few quarterlies for omputing changeinwc"
+        
     if not (inc_ttm.fiscalDateEnding == bsheetq.iloc[0].fiscalDateEnding == cashflow_ttm.fiscalDateEnding):
         response['reason for failure'] = "Dates on TTM statements aren't matching"
         return(response)
@@ -144,8 +151,21 @@ def get_fundamentals(symbol):
     fundamentals.loc[0, 'date'] = bsheetq.loc[0, 'fiscalDateEnding'].date() 
     fundamentals.loc[0, 'cash'] = bsheetq.loc[0, 'cashAndShortTermInvestments']/1E6 + bsheetq.loc[0, 'longTermInvestments']/1E6
     fundamentals.loc[0, 'equity'] = bsheetq.loc[0, 'totalShareholderEquity']/1E6
-    fundamentals.loc[0, 'debt'] = bsheetq.loc[0, 'currentDebt']/1E6 + bsheetq.loc[0, 'longTermDebtNoncurrent']/1E6
-    if pd.isna(inc_ttm['nonInterestIncome']) or inc_ttm['nonInterestIncome'] < 0:
+    if (debtmethod == 'method1'): # This is because alpha vantage isn't consistent about how it classifies various debt items
+        if(bsheetq.loc[0, 'shortTermDebt'] == bsheetq.loc[0, 'currentLongTermDebt']):
+            fundamentals.loc[0, 'debt'] = bsheetq.loc[0, 'shortTermDebt']/1E6 + \
+                                          bsheetq.loc[0, 'longTermDebtNoncurrent']/1E6 + \
+                                          bsheetq.loc[0, 'capitalLeaseObligations']/1E6 
+        else:
+            fundamentals.loc[0, 'debt'] = bsheetq.loc[0, 'shortTermDebt']/1E6 + \
+                                          bsheetq.loc[0, 'currentLongTermDebt']/1E6 + \
+                                          bsheetq.loc[0, 'longTermDebtNoncurrent']/1E6 + \
+                                          bsheetq.loc[0, 'capitalLeaseObligations']/1E6 
+    else: # For any other method
+        fundamentals.loc[0, 'debt'] = bsheetq.loc[0, 'shortLongTermDebtTotal']/1E6 + \
+                                      bsheetq.loc[0, 'capitalLeaseObligations']/1E6 
+
+    if inc_ttm['nonInterestIncome'] <= 0:
         fundamentals.loc[0, 'revenue'] = inc_ttm['totalRevenue']/1E6    # For whatever reason, Alpha Vantage seems to have changed the definition of - 
     else:                                                               # some revenue related terms post 2017
         fundamentals.loc[0, 'revenue'] = inc_ttm['nonInterestIncome']/1E6
@@ -156,15 +176,34 @@ def get_fundamentals(symbol):
     fundamentals.loc[0, 'netinc'] = inc_ttm['netIncome']/1E6
     
     fundamentals.loc[0, 'netcapex'] = cashflow_ttm['capitalExpenditures']/1E6 - cashflow_ttm['depreciationDepletionAndAmortization']/1E6
-    fundamentals.loc[0, 'changeinwc'] = cashflow_ttm['changeInInventory']/1E6 + cashflow_ttm['changeInReceivables']/1E6 \
-                                        - (bsheetq.loc[0, 'currentAccountsPayable']/1E6 - bsheet.loc[0, 'currentAccountsPayable']/1E6)
-    
+    if (changeinwcmethod == 'usingbs'):
+        fundamentals.loc[0, 'changeinwc'] = (bsheetq.loc[0,'inventory'] - bsheetq.loc[4,'inventory'])/1E6 \
+                                            + (bsheetq.loc[0, 'currentNetReceivables'] - bsheetq.loc[4, 'currentNetReceivables'])/1E6 \
+                                            - (bsheetq.loc[0, 'currentAccountsPayable'] - bsheetq.loc[4, 'currentAccountsPayable'])/1E6
+    else: # If no method is specified
+        fundamentals.loc[0, 'changeinwc'] = cashflow_ttm['changeInInventory']/1E6 + cashflow_ttm['changeInReceivables']/1E6 \
+                                            - (bsheetq.loc[0, 'currentAccountsPayable'] - bsheetq.loc[4, 'currentAccountsPayable'])/1E6
+        
     for i in range(0,statement_years): 
         fundamentals.loc[i+1, 'date'] = bsheet.loc[i, 'fiscalDateEnding'].date() 
         fundamentals.loc[i+1, 'cash'] = bsheet.loc[i, 'cashAndShortTermInvestments']/1E6 + bsheet.loc[i, 'longTermInvestments']/1E6
         fundamentals.loc[i+1, 'equity'] = bsheet.loc[i, 'totalShareholderEquity']/1E6
         fundamentals.loc[i+1, 'debt'] = bsheet.loc[i, 'currentDebt']/1E6 + bsheet.loc[i, 'longTermDebtNoncurrent']/1E6
-        if pd.isna(incstmt.loc[i, 'nonInterestIncome']) or incstmt.loc[i, 'nonInterestIncome'] < 0:
+        if (debtmethod == 'method1'): # This is because alpha vantage isn't consistent about how it classifies various debt items
+            if(bsheet.loc[i, 'shortTermDebt'] == bsheet.loc[i, 'currentLongTermDebt']):
+                fundamentals.loc[i+1, 'debt'] = bsheet.loc[i, 'shortTermDebt']/1E6 + \
+                                                bsheet.loc[i, 'longTermDebtNoncurrent']/1E6 + \
+                                                bsheet.loc[i, 'capitalLeaseObligations']/1E6 
+            else:
+                fundamentals.loc[i+1, 'debt'] = bsheet.loc[i, 'shortTermDebt']/1E6 + \
+                                                bsheet.loc[i, 'currentLongTermDebt']/1E6 + \
+                                                bsheet.loc[i, 'longTermDebtNoncurrent']/1E6 + \
+                                                bsheet.loc[i, 'capitalLeaseObligations']/1E6 
+        else: # For any other method
+            fundamentals.loc[i+1, 'debt'] = bsheet.loc[i, 'shortLongTermDebtTotal']/1E6 + \
+                                            bsheet.loc[i, 'capitalLeaseObligations']/1E6 
+
+        if incstmt.loc[i, 'nonInterestIncome'] <= 0:
             fundamentals.loc[i+1, 'revenue'] = incstmt.loc[i, 'totalRevenue']/1E6
         else:    
             fundamentals.loc[i+1, 'revenue'] = incstmt.loc[i, 'nonInterestIncome']/1E6
@@ -175,8 +214,14 @@ def get_fundamentals(symbol):
         
         if i != statement_years-1: # For the last year there is no point in calculating the following
             fundamentals.loc[i+1, 'netcapex'] = cashflow.loc[i, 'capitalExpenditures']/1E6 - cashflow.loc[i, 'depreciationDepletionAndAmortization']/1E6
-            fundamentals.loc[i+1, 'changeinwc'] = cashflow.loc[i, 'changeInInventory']/1E6 + cashflow.loc[i, 'changeInReceivables']/1E6 \
-                                                - (bsheet.loc[i, 'currentAccountsPayable']/1E6 - bsheet.loc[i+1, 'currentAccountsPayable']/1E6)
+            if (changeinwcmethod == 'usingbs'):
+                fundamentals.loc[i+1, 'changeinwc'] = (bsheet.loc[i,'inventory'] - bsheet.loc[i+1,'inventory'])/1E6 \
+                                                    + (bsheet.loc[i, 'currentNetReceivables'] - bsheet.loc[i+1, 'currentNetReceivables'])/1E6 \
+                                                    - (bsheet.loc[i, 'currentAccountsPayable'] - bsheet.loc[i+1, 'currentAccountsPayable'])/1E6
+            else: # If no method is specified
+                fundamentals.loc[i+1, 'changeinwc'] = cashflow.loc[i,'changeInInventory']/1E6 + cashflow.loc[i, 'changeInReceivables']/1E6 \
+                                                    - (bsheet.loc[i, 'currentAccountsPayable'] - bsheet.loc[i+1, 'currentAccountsPayable'])/1E6
+                
     
     response['result'] = 'success'
     response['fundamentals'] = fundamentals
@@ -217,7 +262,7 @@ def value_company(symbol, industry, fundamentals):
     
     response.replace('None',np.nan,inplace=True) # Otherwise trying to convert 'None' string to int or float (below) will throw an error
     company_name = response['Name']
-    mv_equity = int(response['MarketCapitalization'])
+    mv_equity = int(response['MarketCapitalization'])/1E6
     outstanding_shares = int(response['SharesOutstanding'])
     price = float(response['50DayMovingAverage'])
     analyst_target_price = float(response['AnalystTargetPrice'])
@@ -307,7 +352,15 @@ def value_company(symbol, industry, fundamentals):
     for i in range(0, iter_len):
         if fundamentals.loc[i,'opinc'] < 0: # We don't want to consider years where they incurred a loss
             continue
-        int_cov_ratios.loc[free_index] = fundamentals.loc[i, 'opinc']/fundamentals.loc[i, 'intexp']
+        if fundamentals.loc[i, 'intexp'] < 0: # So we can avoid divide-by-zero error
+            super_response['reason for failure'] = 'Interest expense cannot be negative'
+            return(super_response)
+            
+        if fundamentals.loc[i, 'intexp'] == 0: # So we can avoid divide-by-zero error
+            int_cov_ratios.loc[free_index] = 9 # Give it perfect rating
+
+        else:
+            int_cov_ratios.loc[free_index] = fundamentals.loc[i, 'opinc']/fundamentals.loc[i, 'intexp']
         free_index = free_index+1
     
     if len(int_cov_ratios) < 4:
