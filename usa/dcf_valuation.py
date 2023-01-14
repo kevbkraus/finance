@@ -66,7 +66,7 @@ def get_statements(symbol):
 
 
 # get_fundamentals ---------------------------------------------------------------------------------------------------------------
-#   Gets financial statements, creates TTM and carries out sanity checks 
+#   Gets financial statements, creates Trailing Twelve Months (TTM) fundamentals and carries out sanity checks 
 # --------------------------------------------------------------------------------------------------------------------------------
 def get_fundamentals(symbol, debtmethod='method1', changeinwcmethod='usingcf'):
     consolidated_prices_folder = '/home/dinesh/Documents/security_prices/usa'
@@ -74,7 +74,7 @@ def get_fundamentals(symbol, debtmethod='method1', changeinwcmethod='usingcf'):
     response['result'] = 'failure' # Init this to failure so that if error occurs during execution, we can simply -
     
     # Process balance sheet
-    filename = consolidated_prices_folder + '/balance_sheets/' + symbol + '_quarterly.csv'
+    filename = consolidated_prices_folder + '/balance_sheets/' + symbol + '_quarterly_BS.csv'
     try:
         bsheetq = pd.read_csv(filename, parse_dates=['fiscalDateEnding']).fillna(0)
     except Exception as e:
@@ -82,45 +82,45 @@ def get_fundamentals(symbol, debtmethod='method1', changeinwcmethod='usingcf'):
         return(response)  # Return an empty dataframe 
     
     # Process income statements
-    filename = consolidated_prices_folder + '/income_statements/' + symbol + '_quarterly.csv'
+    filename = consolidated_prices_folder + '/income_statements/' + symbol + '_quarterly_IS.csv'
     try:
         incstmtq = pd.read_csv(filename, parse_dates=['fiscalDateEnding']).fillna(0)
     except Exception as e:
         response['reason for failure'] = "Unexpected error while trying to open" + filename 
         return(response)  # Return an empty dataframe 
     
-    inc_ttm = incstmtq.iloc[0:4].sum() # Sum up all items of latest 4 quarters 
+    inc_ttm = incstmtq.iloc[0:4].sum(numeric_only=True) # Sum up all items of latest 4 quarters 
     inc_ttm['fiscalDateEnding'] = incstmtq.loc[0, 'fiscalDateEnding'] # Date and currency get added up to nonsensical values in the above operation -
     inc_ttm['reportedCurrency'] = incstmtq.loc[0, 'reportedCurrency'] #. So correct them to sensible values
     
     # Process cashflow statement
-    filename = consolidated_prices_folder + '/cashflow_statements/' + symbol + '_quarterly.csv'
+    filename = consolidated_prices_folder + '/cashflow_statements/' + symbol + '_quarterly_CF.csv'
     try:
         cashflowstmtq = pd.read_csv(filename, parse_dates=['fiscalDateEnding']).fillna(0)
     except Exception as e:
         response['reason for failure'] = "Unexpected error while trying to open" + filename 
         return(response)  # Return an empty dataframe
     
-    cashflow_ttm = cashflowstmtq.iloc[0:4].sum() # Sum up all items of latest 4 quarters 
+    cashflow_ttm = cashflowstmtq.iloc[0:4].sum(numeric_only=True) # Sum up all items of latest 4 quarters 
     cashflow_ttm['fiscalDateEnding'] = cashflowstmtq.loc[0, 'fiscalDateEnding'] # Date and currency get added up to nonsensical values in the above operation -
     cashflow_ttm['reportedCurrency'] = cashflowstmtq.loc[0, 'reportedCurrency'] #. So correct them to sensible values
     
     # Bring in annual statments so we can extract historical data
-    filename = consolidated_prices_folder + '/balance_sheets/' + symbol + '_annual.csv'
+    filename = consolidated_prices_folder + '/balance_sheets/' + symbol + '_annual_BS.csv'
     try:
         bsheet = pd.read_csv(filename, parse_dates=['fiscalDateEnding']).fillna(0)
     except Exception as e:
         response['reason for failure'] = "Unexpected error while trying to open" + filename 
         return(response)  # Return an empty dataframe 
     
-    filename = consolidated_prices_folder + '/income_statements/' + symbol + '_annual.csv'
+    filename = consolidated_prices_folder + '/income_statements/' + symbol + '_annual_IS.csv'
     try:
         incstmt = pd.read_csv(filename, parse_dates=['fiscalDateEnding']).fillna(0)
     except Exception as e:
         response['reason for failure'] = "Unexpected error while trying to open" + filename 
         return(response)  # Return an empty dataframe 
     
-    filename = consolidated_prices_folder + '/cashflow_statements/' + symbol + '_annual.csv'
+    filename = consolidated_prices_folder + '/cashflow_statements/' + symbol + '_annual_CF.csv'
     try:
         cashflow = pd.read_csv(filename, parse_dates=['fiscalDateEnding']).fillna(0)
     except Exception as e:
@@ -130,7 +130,7 @@ def get_fundamentals(symbol, debtmethod='method1', changeinwcmethod='usingcf'):
     # Do sanity check
     statement_years = min(bsheetq.shape[0],incstmtq.shape[0], cashflowstmtq.shape[0]) # Sometimes one statment has more historical data than others  
     if (statement_years < 5):
-        response['reason for failure'] = "Too few quarterlies for omputing changeinwc"
+        response['reason for failure'] = "Too few quarterlies for computing changeinwc"
         
     if not (inc_ttm.fiscalDateEnding == bsheetq.iloc[0].fiscalDateEnding == cashflow_ttm.fiscalDateEnding):
         response['reason for failure'] = "Dates on TTM statements aren't matching"
@@ -237,15 +237,16 @@ def value_company(symbol, industry, fundamentals):
     AV_KEY = os.environ.get('ALPHAVANTAGE_API_KEY')
     
     # Get latest information related to risk free rate
-    rfr = 1.42 # NOTE: Temp measure. Should put back to quandl.get('USTREASURY/YIELD').iloc[-1]['10 YR'] # %. Risk free rate for USA. We use the latest 10 year treasury yield.
+    rfr = quandl.get('USTREASURY/YIELD').iloc[-1]['10 YR'] # %. Risk free rate for USA. We use the latest 10 year treasury yield.
     
     # In-code input parameters
-    erp = 4.31 # %. Equity risk premium for USA
-    tax = 25 # %. Tax rate. One can use effective or marginal. This changes based on state of registration.-
+    erp = 5.11 # %. Equity risk premium for USA
+    tax = 20 # %. Tax rate. One can use effective or marginal. This changes based on state of registration.-
              # But we will use a single figure that stands for all states. 
     
-    # Get beta to use from adamodaran's xls
-    tempdf = pd.read_excel('/home/dinesh/Documents/Valuations/adamodaran/betas.xls', 'Industry Averages', skiprows=9, index_col=0)
+    # Get beta to use from adamodaran's xls. NOTE: If the firm is earning primarily from USA, betas.xls is the right workbook. If
+    # it is earning gloabally, then betas_global.xls may be right. User discretion advised.
+    tempdf = pd.read_excel('/home/dinesh/Documents/Valuations/adamodaran/betaGlobal.xls', 'Industry Averages', skiprows=9, index_col=0)
     unlevered_beta = tempdf.loc[industry]['Unlevered beta corrected for cash']
     
     # Get market cap, outstanding shares and stock price
@@ -263,8 +264,11 @@ def value_company(symbol, industry, fundamentals):
     response.replace('None',np.nan,inplace=True) # Otherwise trying to convert 'None' string to int or float (below) will throw an error
     company_name = response['Name']
     mv_equity = int(response['MarketCapitalization'])/1E6
-    outstanding_shares = int(response['SharesOutstanding'])
     price = float(response['50DayMovingAverage'])
+    outstanding_shares = int(mv_equity*1E6/price)   #int(response['SharesOutstanding']) # NOTE: In one instance, response had the wrong number
+                                                # of shares outstanding. This is the single most important figure and you can afford to get
+                                                # this wrong. So one should always take the actual value directly from 10K/Q. For now, we are
+                                                # using market cap dividied by 50 day moving average as a proxy for actual number of shares
     analyst_target_price = float(response['AnalystTargetPrice'])
     pe_ratio = float(response['PERatio'])
     
@@ -461,50 +465,60 @@ def value_company(symbol, industry, fundamentals):
             col_num = col_num+1
             
             dummy_df = pd.DataFrame([],columns=['ssBeta = ' + str(ssbeta) + ', gslope = ' + str(gslope)]) # Just to write a heading text to the excel sheet
-            dummy_df.to_excel(writer, 'Details', index=False, startrow = sheetmaxrow)
-            pv_df.to_excel(writer, 'Details', index=False, startrow = writer.book['Details'].max_row)
-            sheetmaxrow = writer.book['Details'].max_row+2
+            dummy_df.to_excel(writer, 'Details', index=False, startrow = sheetmaxrow+2)
+            sheetmaxrow = sheetmaxrow+dummy_df.shape[0]
+            pv_df.to_excel(writer, 'Details', index=False, startrow = sheetmaxrow+2)
+            sheetmaxrow = sheetmaxrow+pv_df.shape[0]
     
         index_num = index_num+1
     
-    writer.save()
     writer.close()
     super_response['value_df'] = value_df
     
     
     # ------------------------------------------------- Write data to a spreadsheet ---------------------------------------------------------------
     output_filename = '/home/dinesh/Documents/Valuations/usa/' + symbol + '.xlsx'
-    book = load_workbook(output_filename)
-    writer = pd.ExcelWriter(output_filename, engine = 'openpyxl')
-    writer.book = book
-    writer.sheets = dict((ws.title, ws) for ws in book.worksheets)
+    #book = load_workbook(output_filename)
+    writer = pd.ExcelWriter(output_filename, mode='a', if_sheet_exists='overlay', engine = 'openpyxl')
+    #writer.book = book
+    #writer.sheets = dict((ws.title, ws) for ws in book.worksheets)
     
     top_df = pd.DataFrame([[company_name], [symbol], [date.today()], ['USD'], [industry]],
                           index = ['Company name', 'Symbol', 'Date', 'Currency', 'Industry'])  
-    
+    lastrow = 0
+
     top_df.to_excel(writer,'Summary', header=False)
+    lastrow = lastrow+ top_df.shape[0]+2
     
     rates_df = pd.DataFrame([['risk-free rate',rfr], ['equity risk premium',erp], ['tax',tax]], columns=['RATES','percentage'])
-    rates_df.to_excel(writer, 'Summary', index=False, startrow = writer.book['Summary'].max_row+2)
+    #rates_df.to_excel(writer, 'Summary', index=False, startrow = writer.book['Summary'].max_row+2)
+    rates_df.to_excel(writer, 'Summary', index=False, startrow = lastrow)
+    lastrow = lastrow+ rates_df.shape[0]+2
     
     market_df = pd.DataFrame([['market cap',mv_equity], ['stock price',price], ['outstanding shares',outstanding_shares], 
                               ['unlevered beta', unlevered_beta], ['debt rating', synthetic_rating.loc[rating_index,'rating']]], columns=['MARKET FIGURES',''])
-    market_df.to_excel(writer, 'Summary', index=False, startrow = writer.book['Summary'].max_row+2)
+    #market_df.to_excel(writer, 'Summary', index=False, startrow = writer.book['Summary'].max_row+2)
+    market_df.to_excel(writer, 'Summary', index=False, startrow = lastrow)
+    lastrow = lastrow+market_df.shape[0]+2
     
     dummy_df = pd.DataFrame([],columns=['FUNDAMENTALS']) # Just to write a heading text to the excel sheet
-    dummy_df.to_excel(writer, 'Summary', index=False, startrow = writer.book['Summary'].max_row+2)
-    fundamentals.to_excel(writer, 'Summary', index=False, startrow = writer.book['Summary'].max_row)
+    #dummy_df.to_excel(writer, 'Summary', index=False, startrow = writer.book['Summary'].max_row+2)
+    dummy_df.to_excel(writer, 'Summary', index=False, startrow = lastrow)
+    lastrow = lastrow+ dummy_df.shape[0]+1
+    fundamentals.to_excel(writer, 'Summary', index=False, startrow = lastrow)
+    lastrow = lastrow+fundamentals.shape[0]+2
     
     derived_df = pd.DataFrame([ ['levered beta', levered_beta], ['cost of equity',cost_of_equity], ['cost of debt', cost_of_debt], ['wacc',wacc],
                                 ['return on capital',pv_df.loc[0, 'roic']], ['reinv rate',pv_df.loc[0,'rir']], ['growth rate',pv_df.loc[0,'growth']] ],
                                 columns=['DERIVED FIGURES','percentage']) 
-    derived_df.to_excel(writer, 'Summary', index=False, startrow = writer.book['Summary'].max_row+2)
+    derived_df.to_excel(writer, 'Summary', index=False, startrow = lastrow)
+    lastrow = lastrow+ derived_df.shape[0]+2
     
     dummy_df = pd.DataFrame([],columns=['VPS MATRIX']) # Just to write a heading text to the excel sheet
-    dummy_df.to_excel(writer, 'Summary', index=False, startrow = writer.book['Summary'].max_row+2)
-    value_df.to_excel(writer, 'Summary', startrow = writer.book['Summary'].max_row)
+    dummy_df.to_excel(writer, 'Summary', index=False, startrow = lastrow)
+    lastrow = lastrow+dummy_df.shape[0]+1
+    value_df.to_excel(writer, 'Summary', startrow = lastrow)
     
-    writer.save()
     writer.close()
 
 
