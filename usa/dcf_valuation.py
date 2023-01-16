@@ -66,80 +66,98 @@ def get_statements(symbol):
 
 
 # get_fundamentals ---------------------------------------------------------------------------------------------------------------
-#   Gets financial statements, creates Trailing Twelve Months (TTM) fundamentals and carries out sanity checks 
+#   Gets financial statements and if the 'base' parameter is 'laterst_quarterly' creates synthetic annual statements from 10Q
+#   financials and then calculates fundamentals using them. If the 'base' parameter is 'latest_annual', uses 10K financials to 
+#   calculate fundamentals  
 # --------------------------------------------------------------------------------------------------------------------------------
-def get_fundamentals(symbol, debtmethod='method1', changeinwcmethod='usingcf'):
+def get_fundamentals(symbol, base='latest_quarterly', debtmethod='method1', changeinwcmethod='usingcf'):
     consolidated_prices_folder = '/home/dinesh/Documents/security_prices/usa'
     response = dict.fromkeys({'result', 'reason for failure', 'fundamentals'}) 
     response['result'] = 'failure' # Init this to failure so that if error occurs during execution, we can simply -
-    
-    # Process balance sheet
-    filename = consolidated_prices_folder + '/balance_sheets/' + symbol + '_quarterly_BS.csv'
-    try:
-        bsheetq = pd.read_csv(filename, parse_dates=['fiscalDateEnding']).fillna(0)
-    except Exception as e:
-        response['reason for failure'] = "Unexpected error while trying to open" + filename 
-        return(response)  # Return an empty dataframe 
-    
-    # Process income statements
-    filename = consolidated_prices_folder + '/income_statements/' + symbol + '_quarterly_IS.csv'
-    try:
-        incstmtq = pd.read_csv(filename, parse_dates=['fiscalDateEnding']).fillna(0)
-    except Exception as e:
-        response['reason for failure'] = "Unexpected error while trying to open" + filename 
-        return(response)  # Return an empty dataframe 
-    
-    inc_ttm = incstmtq.iloc[0:4].sum(numeric_only=True) # Sum up all items of latest 4 quarters 
-    inc_ttm['fiscalDateEnding'] = incstmtq.loc[0, 'fiscalDateEnding'] # Date and currency get added up to nonsensical values in the above operation -
-    inc_ttm['reportedCurrency'] = incstmtq.loc[0, 'reportedCurrency'] #. So correct them to sensible values
-    
-    # Process cashflow statement
-    filename = consolidated_prices_folder + '/cashflow_statements/' + symbol + '_quarterly_CF.csv'
-    try:
-        cashflowstmtq = pd.read_csv(filename, parse_dates=['fiscalDateEnding']).fillna(0)
-    except Exception as e:
-        response['reason for failure'] = "Unexpected error while trying to open" + filename 
-        return(response)  # Return an empty dataframe
-    
-    cashflow_ttm = cashflowstmtq.iloc[0:4].sum(numeric_only=True) # Sum up all items of latest 4 quarters 
-    cashflow_ttm['fiscalDateEnding'] = cashflowstmtq.loc[0, 'fiscalDateEnding'] # Date and currency get added up to nonsensical values in the above operation -
-    cashflow_ttm['reportedCurrency'] = cashflowstmtq.loc[0, 'reportedCurrency'] #. So correct them to sensible values
-    
-    # Bring in annual statments so we can extract historical data
-    filename = consolidated_prices_folder + '/balance_sheets/' + symbol + '_annual_BS.csv'
-    try:
-        bsheet = pd.read_csv(filename, parse_dates=['fiscalDateEnding']).fillna(0)
-    except Exception as e:
-        response['reason for failure'] = "Unexpected error while trying to open" + filename 
-        return(response)  # Return an empty dataframe 
-    
-    filename = consolidated_prices_folder + '/income_statements/' + symbol + '_annual_IS.csv'
-    try:
-        incstmt = pd.read_csv(filename, parse_dates=['fiscalDateEnding']).fillna(0)
-    except Exception as e:
-        response['reason for failure'] = "Unexpected error while trying to open" + filename 
-        return(response)  # Return an empty dataframe 
-    
-    filename = consolidated_prices_folder + '/cashflow_statements/' + symbol + '_annual_CF.csv'
-    try:
-        cashflow = pd.read_csv(filename, parse_dates=['fiscalDateEnding']).fillna(0)
-    except Exception as e:
-        response['reason for failure'] = "Unexpected error while trying to open" + filename 
-        return(response)  # Return an empty dataframe
-    
-    # Do sanity check
-    statement_years = min(bsheetq.shape[0],incstmtq.shape[0], cashflowstmtq.shape[0]) # Sometimes one statment has more historical data than others  
-    if (statement_years < 5):
-        response['reason for failure'] = "Too few quarterlies for computing changeinwc"
+
+    if base == 'latest_quarterly':
+        # Process balance sheet
+        filename = consolidated_prices_folder + '/balance_sheets/' + symbol + '_quarterly_BS.csv'
+        try:
+            bsheetq = pd.read_csv(filename, parse_dates=['fiscalDateEnding']).fillna(0)
+        except Exception as e:
+            response['reason for failure'] = "Unexpected error while trying to open" + filename 
+            return(response)  # Return an empty dataframe 
         
-    if not (inc_ttm.fiscalDateEnding == bsheetq.iloc[0].fiscalDateEnding == cashflow_ttm.fiscalDateEnding):
-        response['reason for failure'] = "Dates on TTM statements aren't matching"
-        return(response)
-  
-    statement_years = min(bsheet.shape[0], incstmt.shape[0], cashflow.shape[0]) # Sometimes one statment has more historical data than others  
-    if not (all(bsheet.loc[0:statement_years-1, 'fiscalDateEnding'] == incstmt.loc[0:statement_years-1, 'fiscalDateEnding']) and  # NOTE: loc and iloc work differently while fetching
-            all(incstmt.loc[0:statement_years-1, 'fiscalDateEnding'] == cashflow.loc[0:statement_years-1, 'fiscalDateEnding'])): # rows. loc[0:3 returns 4 rows, iloc[0:3 returns 3
-        response['reason for failure'] = "Dates on yearly statements aren't matching"
+        bsheet = (bsheetq.iloc[:bsheetq.shape[0]//4*4+1,:]).iloc[::4, :]    # We need only every fourth quarterly as we are trying to get
+                                                                            # synthetic annual balance sheets. However, if the number of 
+                                                                            # quarterly statements is not a multiple of 4, we should discard 
+                                                                            # some rows so that, later, when we creatw synthtic income and 
+                                                                            # cashflow statements, it would make no sense to add less than 
+                                                                            # 4 quarterlies to create synthetic annual income and cashflow 
+                                                                            # statements 
+        bsheet.reset_index(drop=True, inplace=True) 
+ 
+        # Process income statements
+        filename = consolidated_prices_folder + '/income_statements/' + symbol + '_quarterly_IS.csv'
+        try:
+            incstmtq = pd.read_csv(filename, parse_dates=['fiscalDateEnding']).fillna(0)
+        except Exception as e:
+            response['reason for failure'] = "Unexpected error while trying to open" + filename 
+            return(response)  # Return an empty dataframe 
+    
+        temp_df = incstmtq.iloc[:incstmtq.shape[0]//4*4+1,:]
+        incstmt = temp_df.groupby(temp_df.index // 4).sum(numeric_only=True)
+        temp_df = (incstmtq.iloc[:incstmtq.shape[0]//4*4+1,:]).iloc[0::4, :]
+        temp_df.reset_index(drop=True, inplace=True)
+        incstmt['fiscalDateEnding'] = temp_df['fiscalDateEnding']
+        incstmt['reportedCurrency'] = temp_df['reportedCurrency']
+        
+        # Process cashflow statement
+        filename = consolidated_prices_folder + '/cashflow_statements/' + symbol + '_quarterly_CF.csv'
+        try:
+            cashflowq = pd.read_csv(filename, parse_dates=['fiscalDateEnding']).fillna(0)
+        except Exception as e:
+            response['reason for failure'] = "Unexpected error while trying to open" + filename 
+            return(response)  # Return an empty dataframe
+        
+        temp_df = cashflowq.iloc[:cashflowq.shape[0]//4*4+1,:]
+        cashflow = temp_df.groupby(temp_df.index // 4).sum(numeric_only=True)
+        temp_df = (cashflowq.iloc[:cashflowq.shape[0]//4*4+1,:]).iloc[0::4, :]
+        temp_df.reset_index(drop=True, inplace=True)
+        cashflow['fiscalDateEnding'] = temp_df['fiscalDateEnding']
+        cashflow['reportedCurrency'] = temp_df['reportedCurrency']
+    
+    elif(base == 'latest_annual'):
+        # Bring in annual statments so we can extract historical data
+        filename = consolidated_prices_folder + '/balance_sheets/' + symbol + '_annual_BS.csv'
+        try:
+            bsheet = pd.read_csv(filename, parse_dates=['fiscalDateEnding']).fillna(0)
+        except Exception as e:
+            response['reason for failure'] = "Unexpected error while trying to open" + filename 
+            return(response)  # Return an empty dataframe 
+        
+        filename = consolidated_prices_folder + '/income_statements/' + symbol + '_annual_IS.csv'
+        try:
+            incstmt = pd.read_csv(filename, parse_dates=['fiscalDateEnding']).fillna(0)
+        except Exception as e:
+            response['reason for failure'] = "Unexpected error while trying to open" + filename 
+            return(response)  # Return an empty dataframe 
+        
+        filename = consolidated_prices_folder + '/cashflow_statements/' + symbol + '_annual_CF.csv'
+        try:
+            cashflow = pd.read_csv(filename, parse_dates=['fiscalDateEnding']).fillna(0)
+        except Exception as e:
+            response['reason for failure'] = "Unexpected error while trying to open" + filename 
+            return(response)  # Return an empty dataframe
+   
+    else:
+        response['reason for failure'] = 'Invalid base parameter. It should be either latest_quarterly or latest_annul'
+        return['response'] 
+         
+    # Do sanity check
+    statement_years = min(bsheet.shape[0],incstmt.shape[0], cashflow.shape[0])  # Sometimes one statment has more historical data than others  
+    if (statement_years < 2):
+        response['reason for failure'] = "Too few years for computing changeinwc"
+        
+    if not (all(bsheet.loc[0:statement_years-1, 'fiscalDateEnding'] == incstmt.loc[0:statement_years-1, 'fiscalDateEnding']) and    # NOTE: loc and iloc work differently while fetching
+            all(incstmt.loc[0:statement_years-1, 'fiscalDateEnding'] == cashflow.loc[0:statement_years-1, 'fiscalDateEnding'])):    # rows. loc[0:3] returns 4 rows, iloc[0:3] returns 3
+        response['reason for failure'] = "Dates on financial statements aren't matching"
         return(response)
         
     # ---------------------------------- Create a dataframe of selected financial data -----------------------------------------------
@@ -148,78 +166,42 @@ def get_fundamentals(symbol, debtmethod='method1', changeinwcmethod='usingcf'):
     # --------------------------------------------------------------------------------------------------------------------------------
     fundamentals = pd.DataFrame(columns=['date', 'cash', 'equity', 'debt', 'revenue', 'RnD', 'opinc', 'intexp', 'netinc', 'netcapex', 'changeinwc'])
     
-    fundamentals.loc[0, 'date'] = bsheetq.loc[0, 'fiscalDateEnding'].date() 
-    fundamentals.loc[0, 'cash'] = bsheetq.loc[0, 'cashAndShortTermInvestments']/1E6 + bsheetq.loc[0, 'longTermInvestments']/1E6
-    fundamentals.loc[0, 'equity'] = bsheetq.loc[0, 'totalShareholderEquity']/1E6
-    if (debtmethod == 'method1'): # This is because alpha vantage isn't consistent about how it classifies various debt items
-        if(bsheetq.loc[0, 'shortTermDebt'] == bsheetq.loc[0, 'currentLongTermDebt']):
-            fundamentals.loc[0, 'debt'] = bsheetq.loc[0, 'shortTermDebt']/1E6 + \
-                                          bsheetq.loc[0, 'longTermDebtNoncurrent']/1E6 + \
-                                          bsheetq.loc[0, 'capitalLeaseObligations']/1E6 
-        else:
-            fundamentals.loc[0, 'debt'] = bsheetq.loc[0, 'shortTermDebt']/1E6 + \
-                                          bsheetq.loc[0, 'currentLongTermDebt']/1E6 + \
-                                          bsheetq.loc[0, 'longTermDebtNoncurrent']/1E6 + \
-                                          bsheetq.loc[0, 'capitalLeaseObligations']/1E6 
-    else: # For any other method
-        fundamentals.loc[0, 'debt'] = bsheetq.loc[0, 'shortLongTermDebtTotal']/1E6 + \
-                                      bsheetq.loc[0, 'capitalLeaseObligations']/1E6 
-
-    if inc_ttm['nonInterestIncome'] <= 0:
-        fundamentals.loc[0, 'revenue'] = inc_ttm['totalRevenue']/1E6    # For whatever reason, Alpha Vantage seems to have changed the definition of - 
-    else:                                                               # some revenue related terms post 2017
-        fundamentals.loc[0, 'revenue'] = inc_ttm['nonInterestIncome']/1E6
-    
-    fundamentals.loc[0, 'RnD'] = inc_ttm['researchAndDevelopment']/1E6
-    fundamentals.loc[0, 'opinc'] = inc_ttm['operatingIncome']/1E6
-    fundamentals.loc[0, 'intexp'] = inc_ttm['interestExpense']/1E6
-    fundamentals.loc[0, 'netinc'] = inc_ttm['netIncome']/1E6
-    
-    fundamentals.loc[0, 'netcapex'] = cashflow_ttm['capitalExpenditures']/1E6 - cashflow_ttm['depreciationDepletionAndAmortization']/1E6
-    if (changeinwcmethod == 'usingbs'):
-        fundamentals.loc[0, 'changeinwc'] = (bsheetq.loc[0,'inventory'] - bsheetq.loc[4,'inventory'])/1E6 \
-                                            + (bsheetq.loc[0, 'currentNetReceivables'] - bsheetq.loc[4, 'currentNetReceivables'])/1E6 \
-                                            - (bsheetq.loc[0, 'currentAccountsPayable'] - bsheetq.loc[4, 'currentAccountsPayable'])/1E6
-    else: # If no method is specified
-        fundamentals.loc[0, 'changeinwc'] = cashflow_ttm['changeInInventory']/1E6 + cashflow_ttm['changeInReceivables']/1E6 \
-                                            - (bsheetq.loc[0, 'currentAccountsPayable'] - bsheetq.loc[4, 'currentAccountsPayable'])/1E6
-        
     for i in range(0,statement_years): 
-        fundamentals.loc[i+1, 'date'] = bsheet.loc[i, 'fiscalDateEnding'].date() 
-        fundamentals.loc[i+1, 'cash'] = bsheet.loc[i, 'cashAndShortTermInvestments']/1E6 + bsheet.loc[i, 'longTermInvestments']/1E6
-        fundamentals.loc[i+1, 'equity'] = bsheet.loc[i, 'totalShareholderEquity']/1E6
-        fundamentals.loc[i+1, 'debt'] = bsheet.loc[i, 'currentDebt']/1E6 + bsheet.loc[i, 'longTermDebtNoncurrent']/1E6
+        fundamentals.loc[i, 'date'] = bsheet.loc[i, 'fiscalDateEnding'].date() 
+        fundamentals.loc[i, 'cash'] = bsheet.loc[i, 'cashAndShortTermInvestments']/1E6 + bsheet.loc[i, 'longTermInvestments']/1E6
+        fundamentals.loc[i, 'equity'] = bsheet.loc[i, 'totalShareholderEquity']/1E6
+        fundamentals.loc[i, 'debt'] = bsheet.loc[i, 'currentDebt']/1E6 + bsheet.loc[i, 'longTermDebtNoncurrent']/1E6
         if (debtmethod == 'method1'): # This is because alpha vantage isn't consistent about how it classifies various debt items
             if(bsheet.loc[i, 'shortTermDebt'] == bsheet.loc[i, 'currentLongTermDebt']):
-                fundamentals.loc[i+1, 'debt'] = bsheet.loc[i, 'shortTermDebt']/1E6 + \
+                fundamentals.loc[i, 'debt'] = bsheet.loc[i, 'shortTermDebt']/1E6 + \
                                                 bsheet.loc[i, 'longTermDebtNoncurrent']/1E6 + \
                                                 bsheet.loc[i, 'capitalLeaseObligations']/1E6 
             else:
-                fundamentals.loc[i+1, 'debt'] = bsheet.loc[i, 'shortTermDebt']/1E6 + \
+                fundamentals.loc[i, 'debt'] = bsheet.loc[i, 'shortTermDebt']/1E6 + \
                                                 bsheet.loc[i, 'currentLongTermDebt']/1E6 + \
                                                 bsheet.loc[i, 'longTermDebtNoncurrent']/1E6 + \
                                                 bsheet.loc[i, 'capitalLeaseObligations']/1E6 
         else: # For any other method
-            fundamentals.loc[i+1, 'debt'] = bsheet.loc[i, 'shortLongTermDebtTotal']/1E6 + \
+            fundamentals.loc[i, 'debt'] = bsheet.loc[i, 'shortLongTermDebtTotal']/1E6 + \
                                             bsheet.loc[i, 'capitalLeaseObligations']/1E6 
 
         if incstmt.loc[i, 'nonInterestIncome'] <= 0:
-            fundamentals.loc[i+1, 'revenue'] = incstmt.loc[i, 'totalRevenue']/1E6
+            fundamentals.loc[i, 'revenue'] = incstmt.loc[i, 'totalRevenue']/1E6
         else:    
-            fundamentals.loc[i+1, 'revenue'] = incstmt.loc[i, 'nonInterestIncome']/1E6
-        fundamentals.loc[i+1, 'RnD'] = incstmt.loc[i, 'researchAndDevelopment']/1E6
-        fundamentals.loc[i+1, 'opinc'] = incstmt.loc[i, 'operatingIncome']/1E6
-        fundamentals.loc[i+1, 'intexp'] = incstmt.loc[i, 'interestExpense']/1E6
-        fundamentals.loc[i+1, 'netinc'] = incstmt.loc[i, 'netIncome']/1E6
+            fundamentals.loc[i, 'revenue'] = incstmt.loc[i, 'nonInterestIncome']/1E6
+        fundamentals.loc[i, 'RnD'] = incstmt.loc[i, 'researchAndDevelopment']/1E6
+        fundamentals.loc[i, 'opinc'] = incstmt.loc[i, 'operatingIncome']/1E6
+        fundamentals.loc[i, 'intexp'] = incstmt.loc[i, 'interestExpense']/1E6
+        fundamentals.loc[i, 'netinc'] = incstmt.loc[i, 'netIncome']/1E6
         
         if i != statement_years-1: # For the last year there is no point in calculating the following
-            fundamentals.loc[i+1, 'netcapex'] = cashflow.loc[i, 'capitalExpenditures']/1E6 - cashflow.loc[i, 'depreciationDepletionAndAmortization']/1E6
+            fundamentals.loc[i, 'netcapex'] = cashflow.loc[i, 'capitalExpenditures']/1E6 - cashflow.loc[i, 'depreciationDepletionAndAmortization']/1E6
             if (changeinwcmethod == 'usingbs'):
-                fundamentals.loc[i+1, 'changeinwc'] = (bsheet.loc[i,'inventory'] - bsheet.loc[i+1,'inventory'])/1E6 \
+                fundamentals.loc[i, 'changeinwc'] = (bsheet.loc[i,'inventory'] - bsheet.loc[i+1,'inventory'])/1E6 \
                                                     + (bsheet.loc[i, 'currentNetReceivables'] - bsheet.loc[i+1, 'currentNetReceivables'])/1E6 \
                                                     - (bsheet.loc[i, 'currentAccountsPayable'] - bsheet.loc[i+1, 'currentAccountsPayable'])/1E6
             else: # If no method is specified
-                fundamentals.loc[i+1, 'changeinwc'] = cashflow.loc[i,'changeInInventory']/1E6 + cashflow.loc[i, 'changeInReceivables']/1E6 \
+                fundamentals.loc[i, 'changeinwc'] = cashflow.loc[i,'changeInInventory']/1E6 + cashflow.loc[i, 'changeInReceivables']/1E6 \
                                                     - (bsheet.loc[i, 'currentAccountsPayable'] - bsheet.loc[i+1, 'currentAccountsPayable'])/1E6
                 
     
@@ -237,7 +219,11 @@ def value_company(symbol, industry, fundamentals):
     AV_KEY = os.environ.get('ALPHAVANTAGE_API_KEY')
     
     # Get latest information related to risk free rate
-    rfr = quandl.get('USTREASURY/YIELD').iloc[-1]['10 YR'] # %. Risk free rate for USA. We use the latest 10 year treasury yield.
+    rfr = 3.49#quandl.get('USTREASURY/YIELD').iloc[-1]['10 YR']  # %. Risk free rate for USA. We use the latest 10 year treasury yield.
+                                                            # NOTE: Sometimes quandl is super slow. Plus, in the future, we want to
+                                                            # be able to value a company at a past date. So we should write a function
+                                                            # to update an excel sheet or something with historical rfr values and use
+                                                            # that excel sheet here instead
     
     # In-code input parameters
     erp = 5.11 # %. Equity risk premium for USA
@@ -265,10 +251,10 @@ def value_company(symbol, industry, fundamentals):
     company_name = response['Name']
     mv_equity = int(response['MarketCapitalization'])/1E6
     price = float(response['50DayMovingAverage'])
-    outstanding_shares = int(mv_equity*1E6/price)   #int(response['SharesOutstanding']) # NOTE: In one instance, response had the wrong number
-                                                # of shares outstanding. This is the single most important figure and you can afford to get
-                                                # this wrong. So one should always take the actual value directly from 10K/Q. For now, we are
-                                                # using market cap dividied by 50 day moving average as a proxy for actual number of shares
+    outstanding_shares = int(mv_equity*1E6/price)   # int(response['SharesOutstanding']) # NOTE: In one instance, response had the wrong number
+                                                    # of shares outstanding. This is the single most important figure and you can afford to get
+                                                    # this wrong. So one should always take the actual value directly from 10K/Q. For now, we are
+                                                    # using market cap dividied by 50 day moving average as a proxy for actual number of shares
     analyst_target_price = float(response['AnalystTargetPrice'])
     pe_ratio = float(response['PERatio'])
     
@@ -293,25 +279,22 @@ def value_company(symbol, industry, fundamentals):
         return(super_response)
     
     average_RnD = fundamentals['RnD'].mean()
-    RnD_asset = 3*average_RnD # 1+0.8+0.6+0.4+0.2 = 3
-    RnD_depreciation = 0.8*average_RnD # R&D expense made one year is depreciated 20% for every year after that. 4*0.2 = 0.8
-    
-    fundamentals['equity'] = fundamentals['equity'] + RnD_asset
-    fundamentals['opinc'] = fundamentals['opinc'] + fundamentals['RnD'] - RnD_depreciation
-    fundamentals['netcapex'] = fundamentals['netcapex'] + fundamentals['RnD'] - RnD_depreciation 
-    super_response['fundamentals'] = fundamentals
+
+    if average_RnD != 0:
+        RnD_asset = 3*average_RnD # 1+0.8+0.6+0.4+0.2 = 3
+        RnD_depreciation = 0.8*average_RnD # R&D expense made one year is depreciated 20% for every year after that. 4*0.2 = 0.8
+        
+        fundamentals['equity'] = fundamentals['equity'] + RnD_asset
+        fundamentals['opinc'] = fundamentals['opinc'] + fundamentals['RnD'] - RnD_depreciation
+        fundamentals['netcapex'] = fundamentals['netcapex'] + fundamentals['RnD'] - RnD_depreciation 
+        super_response['fundamentals'] = fundamentals
     
     # Calculate ROIC
     invested_capitals = fundamentals['equity']+fundamentals['debt']-fundamentals['cash']
     roics = pd.Series(dtype=float)
-    roics.loc[0] = fundamentals.loc[0,'opinc']*(1-tax/100)*2/(invested_capitals[1]+invested_capitals[2]) # For calculating ROIC of TTM, we are taking a shortcut: We -
-                                                                                                         # are using the average invested capital of the previous -
-                                                                                                         # financial year and the current - instead of finding the 
-                                                                                                         # BVs of equity, debt, cash of the correct quarter 12 months
-                                                                                                         # ago, adjusting for R&D etc.
     
-    iter_len = 5 if len(fundamentals) > 6 else len(fundamentals)-1 # We don't want to consider anything older than 5 years
-    for i in range(1,iter_len): # We skip the last one as we don't have information about invested capital before the oldest year
+    iter_len = 5 if len(fundamentals) > 5 else len(fundamentals)-1 # We don't want to consider anything older than 5 years
+    for i in range(0,iter_len): # We skip the last one as we don't have information about invested capital before the oldest year
         roics.loc[i] =  fundamentals.loc[i,'opinc']*(1-tax/100)/invested_capitals.loc[i+1]
     
     roics_pos = pd.Series([x for x in roics if x>0]) # Extract only positive ROIC values
@@ -333,7 +316,7 @@ def value_company(symbol, industry, fundamentals):
         rirs.loc[free_index] = reinvestments[i]/(fundamentals.loc[i,'opinc']*(1-tax/100))
         free_index = free_index+1
     
-    if len(rirs) < 3: # We are overall examining 5 historic years and one ttm
+    if len(rirs) < 3: # We are overall examining 5 historic years
         rir = 0
     else:
         rir = rirs.mean()
@@ -346,9 +329,12 @@ def value_company(symbol, industry, fundamentals):
     synthetic_rating = pd.DataFrame({'int_cov_ratio': pd.Series([], dtype=float), 
                                      'rating': pd.Series([], dtype=str), 
                                      'spread': pd.Series([], dtype=float)})
+    
+    # NOTE: The following three arrays realted to interest coverage ratios and corresponding ratings and spread change from time to time.-
+    # So this is a bad idea. Try to automate this. For now, these need to be updated from https://pages.stern.nyu.edu/~adamodar/New_Home_Page/datafile/ratings.html
     t_int_cov_ratio = [-np.inf, 0.2, 0.65, 0.8, 1.25, 1.5, 1.75, 2, 2.25, 2.5, 3, 4.25, 5.5, 6.5, 8.5] # 't' prefix for 'table'
     t_rating = ['D2/D', 'C2/C', 'Ca2/CC', 'Caa/CCC', 'B3/B-', 'B2/B', 'B1/B+', 'Ba2/BB', 'Ba1/BB+', 'Baa2/BBB', 'A3/A-', 'A2/A', 'A1/A+', 'Aa2/AA', 'Aaa/AAA']
-    t_spread = [17.44, 13.09, 9.97, 9.46, 5.94, 4.86, 4.05, 2.77, 2.31, 1.71, 1.33, 1.18, 1.07, 0.85, 0.69] # percentage
+    t_spread = [20, 17.5, 15.78, 11.57, 7.37, 5.26, 4.55, 3.13, 2.42, 2.00, 1.62, 1.42, 1.23, 0.85, 0.69] # percentage
     synthetic_rating = pd.DataFrame({'int_cov_ratio':t_int_cov_ratio, 'rating':t_rating, 'spread':t_spread})
     
     int_cov_ratios = pd.Series(dtype=float)
@@ -367,7 +353,7 @@ def value_company(symbol, industry, fundamentals):
             int_cov_ratios.loc[free_index] = fundamentals.loc[i, 'opinc']/fundamentals.loc[i, 'intexp']
         free_index = free_index+1
     
-    if len(int_cov_ratios) < 4:
+    if len(int_cov_ratios) < 3:
         super_response['reason for failure'] = 'This company has too many loss years'
         return(super_response)
     
@@ -527,6 +513,7 @@ def value_company(symbol, industry, fundamentals):
     print('------------------ VALUATION SUMMARY ----------------------')
     print('\n')
     print(company_name, '\n')
+    print('Latest statement date:', super_response['fundamentals'].loc[0,'date'])
     print('Industry: ', industry)
     print('Share price: ', price, '\n')
     print('Analyst target: ',analyst_target_price, '\n')
