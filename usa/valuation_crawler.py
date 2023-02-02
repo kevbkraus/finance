@@ -14,7 +14,7 @@ import time
 # Use exchange names to shortlist companies 
 # Throw away all the companies that are financial
 
-indname_df = pd.read_excel('/home/dinesh/Documents/Valuations/adamodaran/indname.xls').fillna('') # Extract stocks, industry list
+indname_df = pd.read_excel('/home/dinesh/Documents/Valuations/adamodaran/indname.xlsx').fillna('') # Extract stocks, industry list
 us_stocks = indname_df[indname_df['Exchange:Ticker'].str.contains("Nasdaq|NYSE")] # Extract a sublist containing stocks listed in US exchanges
 us_stocks.reset_index(inplace=True) # Reset the index to start from 0 and increment sequentially (so they can be selected using a random number generator
 
@@ -26,7 +26,7 @@ losers_filename = '/home/dinesh/Documents/Valuations/usa/losers.xlsx'
 
 win_idx = 0
 lose_idx = 0
-num_stocks = 50
+num_stocks = 10
 for i in range(0,num_stocks): # Process 100 random stocks per run of this code
     random_index = randint(0, us_stocks.shape[0]-1)
     
@@ -56,15 +56,11 @@ for i in range(0,num_stocks): # Process 100 random stocks per run of this code
         if lose_idx > 3 or i == (num_stocks-1): # Once we have assembled 10 losers, commit the df to the excel file to prevent unexpected data loss
             print('Committing losers to file')
             if os.path.exists(losers_filename):
-                book = load_workbook(losers_filename)       
-                writer = pd.ExcelWriter(losers_filename, engine = 'openpyxl')
-                writer.book = book
-                writer.sheets = dict((ws.title, ws) for ws in book.worksheets)
+                writer = pd.ExcelWriter(losers_filename, mode='a', if_sheet_exists='overlay', engine = 'openpyxl')
                 losers_df.to_excel(writer, 'Summary', index=False, header=False, startrow = writer.book['Summary'].max_row)
             else:
                 writer = pd.ExcelWriter(losers_filename, engine = 'openpyxl')
                 losers_df.to_excel(writer, 'Summary', index=False, header=True)
-            writer.save()
             writer.close()
             lose_idx = 0
         continue 
@@ -90,15 +86,11 @@ for i in range(0,num_stocks): # Process 100 random stocks per run of this code
         if lose_idx > 3 or i == (num_stocks-1): # Once we have assembled 10 losers, commit the df to the excel file to prevent unexpected data loss
             print('Committing losers to file')
             if os.path.exists(losers_filename):
-                book = load_workbook(losers_filename)       
-                writer = pd.ExcelWriter(losers_filename, engine = 'openpyxl')
-                writer.book = book
-                writer.sheets = dict((ws.title, ws) for ws in book.worksheets)
+                writer = pd.ExcelWriter(losers_filename, mode='a', if_sheet_exists='overlay', engine = 'openpyxl')
                 losers_df.to_excel(writer, 'Summary', index=False, header=False, startrow = writer.book['Summary'].max_row)
             else:
                 writer = pd.ExcelWriter(losers_filename, engine = 'openpyxl')
                 losers_df.to_excel(writer, 'Summary', index=False, header=True)
-            writer.save()
             writer.close()
             lose_idx = 0
     
@@ -121,15 +113,11 @@ for i in range(0,num_stocks): # Process 100 random stocks per run of this code
         if win_idx > 0 or i == (num_stocks-1): # Once we have assembled 10 winners, commit the df to the excel file to prevent unexpected data loss
             print('Committing winners to file')
             if os.path.exists(winners_filename):
-                book = load_workbook(winners_filename)       
-                writer = pd.ExcelWriter(winners_filename, engine = 'openpyxl')
-                writer.book = book
-                writer.sheets = dict((ws.title, ws) for ws in book.worksheets)
+                writer = pd.ExcelWriter(winners_filename, mode='a', if_sheet_exists='overlay', engine = 'openpyxl')
                 winners_df.to_excel(writer, 'Summary', index=False, header=False, startrow = writer.book['Summary'].max_row)
             else:
                 writer = pd.ExcelWriter(winners_filename, engine = 'openpyxl')
                 winners_df.to_excel(writer, 'Summary', index=False, header=True)
-            writer.save()
             writer.close()
             win_idx = 0
     

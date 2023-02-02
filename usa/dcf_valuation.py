@@ -70,12 +70,12 @@ def get_statements(symbol):
 #   financials and then calculates fundamentals using them. If the 'base' parameter is 'latest_annual', uses 10K financials to 
 #   calculate fundamentals  
 # --------------------------------------------------------------------------------------------------------------------------------
-def get_fundamentals(symbol, base='latest_quarterly', debtmethod='method1', changeinwcmethod='usingcf'):
+def get_fundamentals(symbol, base='latest quarterly', debtmethod='method1', changeinwcmethod='usingcf'):
     consolidated_prices_folder = '/home/dinesh/Documents/security_prices/usa'
     response = dict.fromkeys({'result', 'reason for failure', 'fundamentals'}) 
     response['result'] = 'failure' # Init this to failure so that if error occurs during execution, we can simply -
 
-    if base == 'latest_quarterly':
+    if base == 'latest quarterly':
         # Process balance sheet
         filename = consolidated_prices_folder + '/balance_sheets/' + symbol + '_quarterly_BS.csv'
         try:
@@ -123,7 +123,7 @@ def get_fundamentals(symbol, base='latest_quarterly', debtmethod='method1', chan
         cashflow['fiscalDateEnding'] = temp_df['fiscalDateEnding']
         cashflow['reportedCurrency'] = temp_df['reportedCurrency']
     
-    elif(base == 'latest_annual'):
+    elif(base == 'latest annual'):
         # Bring in annual statments so we can extract historical data
         filename = consolidated_prices_folder + '/balance_sheets/' + symbol + '_annual_BS.csv'
         try:
@@ -209,7 +209,7 @@ def get_fundamentals(symbol, base='latest_quarterly', debtmethod='method1', chan
     response['fundamentals'] = fundamentals
     return(response)        
 
-def value_company(symbol, industry, fundamentals):
+def value_company(symbol, industry, fundamentals, rir_method = 'last 5 years'):
     super_response = dict.fromkeys({'result', 'reason for failure', 'Company name', 'Share price', 'Analyst target', 'PE', 'Debt rating', 'fundamentals', 'value_df'}) 
     super_response['result'] = 'failure' # Init this to failure so that if error occurs during execution, we can simply -
                                          # return super_response     
@@ -287,7 +287,8 @@ def value_company(symbol, industry, fundamentals):
         fundamentals['equity'] = fundamentals['equity'] + RnD_asset
         fundamentals['opinc'] = fundamentals['opinc'] + fundamentals['RnD'] - RnD_depreciation
         fundamentals['netcapex'] = fundamentals['netcapex'] + fundamentals['RnD'] - RnD_depreciation 
-        super_response['fundamentals'] = fundamentals
+        
+    super_response['fundamentals'] = fundamentals
     
     # Calculate ROIC
     invested_capitals = fundamentals['equity']+fundamentals['debt']-fundamentals['cash']
@@ -297,7 +298,7 @@ def value_company(symbol, industry, fundamentals):
     for i in range(0,iter_len): # We skip the last one as we don't have information about invested capital before the oldest year
         roics.loc[i] =  fundamentals.loc[i,'opinc']*(1-tax/100)/invested_capitals.loc[i+1]
     
-    roics_pos = pd.Series([x for x in roics if x>0]) # Extract only positive ROIC values
+    roics_pos = pd.Series([x for x in roics if x>0], dtype = float) # Extract only positive ROIC values
     if len(roics_pos) < 3: # We are overall examining 5 historic years and one ttm
         super_response['reason for failure'] = 'This company has too many loss years'
         return(super_response)
@@ -316,11 +317,22 @@ def value_company(symbol, industry, fundamentals):
         rirs.loc[free_index] = reinvestments[i]/(fundamentals.loc[i,'opinc']*(1-tax/100))
         free_index = free_index+1
     
-    if len(rirs) < 3: # We are overall examining 5 historic years
-        rir = 0
+    if rir_method == 'last 5 years':
+        if len(rirs) < 3: # We are overall examining 5 historic years
+            rir = 0
+        else:
+            rir = rirs.mean()
+    elif rir_method == 'latest year only':
+        rir = rirs[0]
     else:
-        rir = rirs.mean()
-    
+        response['reason for failure'] = 'Invalid rir_method parameter. It should be either <last 5 years> or <latest year only>'
+        return['response'] 
+         
+    if rir > 1: # If there is a more than 100% reinvestment (presumably because the company raised money through equity or debt financing
+                # then such companies must be revalued manually
+        super_response['reason for failure'] = 'Reinvestment rate more than 100%'
+        return(super_response)
+         
     
     # -------------------------------------------- Calculate Weighted Average Cost of Capital ---------------------------------------
     # We use synthetic bond rating (based on interest coverage ratio) to find cost of debt, and use BV of debt in place of MV of debt
@@ -385,7 +397,7 @@ def value_company(symbol, industry, fundamentals):
     steady_state_roic = 0.1 # NOTE: This is an assumption that may need to change from time to time. So keep reevaluating 
     
     value_df = pd.DataFrame(columns=['gslope=3', 'gslope=5', 'gslope=7'], index=['ssBeta=0.8','ssBeta=1', 'ssBeta=1.2'])
-    
+   
     sheetmaxrow = 1
     index_num = 0
     for ssbeta in [0.8, 1, 1.2]:
@@ -414,11 +426,20 @@ def value_company(symbol, industry, fundamentals):
             pv_df.loc[0, 'growth'] = iroic*irir*100
             pv_df.loc[0, 'fcff'] = fcff
             pv_df.loc[0, 'pv'] = pv
+            
             if roic*rir < rfr/100: # If growth is already slower than risk free rate. Then treat this as a going concern
+                                                                # NOTE: There are a lot of issues in this if condition. Firstly the two conditions combined
+                                                                # here should be dealt with separately. For SWX, wacc seems to be less than rfr. This needs to be investigated 
                 if fcff < 0: # If free cash flow for current year is negative and growth is below rfr, quit automatic valuation and settle for manual valuation
                     super_response['reason for failure'] = 'Negative FCFF for base year'
                     return(super_response)
                 op_asset_value = fcff*(1+roic*rir)/(wacc/100 - roic*rir)
+
+            elif roic < steady_state_roic:  # Steady state ROIC is set at a fixed level for all industries, which is not ideal. If current ROIC is less that steady
+                                            # state ROIC, then we cannot ramp down to steady state. You may want to rerun this code with the specific industry's
+                                            # steady state ROIC when this happens.    
+                op_asset_value = fcff*(1+roic*rir)/(rfr/100 - roic*rir)
+
             else: 
                 num_extord_years = int((roic*rir*100-rfr)/gslope)+3 # NOTE: The y-intercept value of 3 is chosen arbitrarily for now. One should 
                                                                     # however look at hisotric figures what should be the y-intercept
@@ -464,10 +485,7 @@ def value_company(symbol, industry, fundamentals):
     
     # ------------------------------------------------- Write data to a spreadsheet ---------------------------------------------------------------
     output_filename = '/home/dinesh/Documents/Valuations/usa/' + symbol + '.xlsx'
-    #book = load_workbook(output_filename)
     writer = pd.ExcelWriter(output_filename, mode='a', if_sheet_exists='overlay', engine = 'openpyxl')
-    #writer.book = book
-    #writer.sheets = dict((ws.title, ws) for ws in book.worksheets)
     
     top_df = pd.DataFrame([[company_name], [symbol], [date.today()], ['USD'], [industry]],
                           index = ['Company name', 'Symbol', 'Date', 'Currency', 'Industry'])  
@@ -477,18 +495,15 @@ def value_company(symbol, industry, fundamentals):
     lastrow = lastrow+ top_df.shape[0]+2
     
     rates_df = pd.DataFrame([['risk-free rate',rfr], ['equity risk premium',erp], ['tax',tax]], columns=['RATES','percentage'])
-    #rates_df.to_excel(writer, 'Summary', index=False, startrow = writer.book['Summary'].max_row+2)
     rates_df.to_excel(writer, 'Summary', index=False, startrow = lastrow)
     lastrow = lastrow+ rates_df.shape[0]+2
     
     market_df = pd.DataFrame([['market cap',mv_equity], ['stock price',price], ['outstanding shares',outstanding_shares], 
                               ['unlevered beta', unlevered_beta], ['debt rating', synthetic_rating.loc[rating_index,'rating']]], columns=['MARKET FIGURES',''])
-    #market_df.to_excel(writer, 'Summary', index=False, startrow = writer.book['Summary'].max_row+2)
     market_df.to_excel(writer, 'Summary', index=False, startrow = lastrow)
     lastrow = lastrow+market_df.shape[0]+2
     
     dummy_df = pd.DataFrame([],columns=['FUNDAMENTALS']) # Just to write a heading text to the excel sheet
-    #dummy_df.to_excel(writer, 'Summary', index=False, startrow = writer.book['Summary'].max_row+2)
     dummy_df.to_excel(writer, 'Summary', index=False, startrow = lastrow)
     lastrow = lastrow+ dummy_df.shape[0]+1
     fundamentals.to_excel(writer, 'Summary', index=False, startrow = lastrow)
