@@ -83,7 +83,7 @@ def get_fundamentals(symbol, base='latest quarterly', debtmethod='method1', chan
         except Exception as e:
             response['reason for failure'] = "Unexpected error while trying to open" + filename 
             return(response)  # Return an empty dataframe 
-        
+                     
         bsheet = (bsheetq.iloc[:bsheetq.shape[0]//4*4+1,:]).iloc[::4, :]    # We need only every fourth quarterly as we are trying to get
                                                                             # synthetic annual balance sheets. However, if the number of 
                                                                             # quarterly statements is not a multiple of 4, we should discard 
@@ -147,13 +147,14 @@ def get_fundamentals(symbol, base='latest quarterly', debtmethod='method1', chan
             return(response)  # Return an empty dataframe
    
     else:
-        response['reason for failure'] = 'Invalid base parameter. It should be either latest_quarterly or latest_annul'
-        return['response'] 
+        response['reason for failure'] = 'Invalid base parameter. It should be either latest quarterly or latest annual'
+        return(response) 
          
     # Do sanity check
     statement_years = min(bsheet.shape[0],incstmt.shape[0], cashflow.shape[0])  # Sometimes one statment has more historical data than others  
     if (statement_years < 2):
         response['reason for failure'] = "Too few years for computing changeinwc"
+        return(response)
         
     if not (all(bsheet.loc[0:statement_years-1, 'fiscalDateEnding'] == incstmt.loc[0:statement_years-1, 'fiscalDateEnding']) and    # NOTE: loc and iloc work differently while fetching
             all(incstmt.loc[0:statement_years-1, 'fiscalDateEnding'] == cashflow.loc[0:statement_years-1, 'fiscalDateEnding'])):    # rows. loc[0:3] returns 4 rows, iloc[0:3] returns 3
@@ -209,7 +210,7 @@ def get_fundamentals(symbol, base='latest quarterly', debtmethod='method1', chan
     response['fundamentals'] = fundamentals
     return(response)        
 
-def value_company(symbol, industry, fundamentals, rir_method = 'last 5 years'):
+def value_company(symbol, industry, fundamentals, beta_to_use = 'global', rir_method = 'last 5 years'):
     super_response = dict.fromkeys({'result', 'reason for failure', 'Company name', 'Share price', 'Analyst target', 'PE', 'Debt rating', 'fundamentals', 'value_df'}) 
     super_response['result'] = 'failure' # Init this to failure so that if error occurs during execution, we can simply -
                                          # return super_response     
@@ -230,9 +231,16 @@ def value_company(symbol, industry, fundamentals, rir_method = 'last 5 years'):
     tax = 20 # %. Tax rate. One can use effective or marginal. This changes based on state of registration.-
              # But we will use a single figure that stands for all states. 
     
-    # Get beta to use from adamodaran's xls. NOTE: If the firm is earning primarily from USA, betas.xls is the right workbook. If
-    # it is earning gloabally, then betas_global.xls may be right. User discretion advised.
-    tempdf = pd.read_excel('/home/dinesh/Documents/Valuations/adamodaran/betaGlobal.xls', 'Industry Averages', skiprows=9, index_col=0)
+    # Get beta to use from adamodaran's xls. 
+    if beta_to_use == 'global':
+        tempdf = pd.read_excel('/home/dinesh/Documents/Valuations/adamodaran/betaGlobal.xls', 'Industry Averages', skiprows=9, index_col=0)
+    elif beta_to_use == 'usa':
+        tempdf = pd.read_excel('/home/dinesh/Documents/Valuations/adamodaran/betas.xls', 'Industry Averages', skiprows=9, index_col=0)
+    else:
+        super_response['reason for failure'] = 'Invalid input for beta_to_use. Valid inputs are <global> or <usa>'
+        return(super_response)
+        
+    
     unlevered_beta = tempdf.loc[industry]['Unlevered beta corrected for cash']
     
     # Get market cap, outstanding shares and stock price
@@ -263,7 +271,7 @@ def value_company(symbol, industry, fundamentals, rir_method = 'last 5 years'):
     super_response['Analyst target'] = analyst_target_price
     super_response['PE'] = pe_ratio
     
-    if fundamentals.shape[0] < 5: # At a min, we are expecting 4 historical years, plus the latest year/TTM
+    if rir_method == 'last 5 years' and fundamentals.shape[0] < 5: # At a min, we are expecting 4 historical years, plus the latest year/TTM
         super_response['reason for failure'] = 'We do not have enough historic data to go about'
         return(super_response)
     
@@ -292,6 +300,9 @@ def value_company(symbol, industry, fundamentals, rir_method = 'last 5 years'):
     
     # Calculate ROIC
     invested_capitals = fundamentals['equity']+fundamentals['debt']-fundamentals['cash']
+    if any(invested_capitals < 0): # Sanity check
+        super_response['reason for failure'] = 'Invested capital is negative sometimes. Something wrong with the data'
+        return(super_response)
     roics = pd.Series(dtype=float)
     
     iter_len = 5 if len(fundamentals) > 5 else len(fundamentals)-1 # We don't want to consider anything older than 5 years
@@ -300,7 +311,7 @@ def value_company(symbol, industry, fundamentals, rir_method = 'last 5 years'):
     
     roics_pos = pd.Series([x for x in roics if x>0], dtype = float) # Extract only positive ROIC values
     if len(roics_pos) < 3: # We are overall examining 5 historic years and one ttm
-        super_response['reason for failure'] = 'This company has too many loss years'
+        super_response['reason for failure'] = 'This company has too many negative ROICs'
         return(super_response)
     
     roic = stats.gmean(roics_pos.values)    # Geometric mean of positive ROIC values
@@ -325,8 +336,8 @@ def value_company(symbol, industry, fundamentals, rir_method = 'last 5 years'):
     elif rir_method == 'latest year only':
         rir = rirs[0]
     else:
-        response['reason for failure'] = 'Invalid rir_method parameter. It should be either <last 5 years> or <latest year only>'
-        return['response'] 
+        super_response['reason for failure'] = 'Invalid rir_method parameter. It should be either <last 5 years> or <latest year only>'
+        return(super_response) 
          
     if rir > 1: # If there is a more than 100% reinvestment (presumably because the company raised money through equity or debt financing
                 # then such companies must be revalued manually
@@ -366,7 +377,7 @@ def value_company(symbol, industry, fundamentals, rir_method = 'last 5 years'):
         free_index = free_index+1
     
     if len(int_cov_ratios) < 3:
-        super_response['reason for failure'] = 'This company has too many loss years'
+        super_response['reason for failure'] = 'Bad interest coverage ratios'
         return(super_response)
     
     int_cov_ratio = int_cov_ratios.mean()
