@@ -13,7 +13,7 @@ import time
 
 # Use exchange names to shortlist companies 
 # Throw away all the companies that are financial
-def valuation_crawler(industry_name): 
+def valuation_crawler(industry_name = None): 
     indname_df = pd.read_excel('/home/dinesh/Documents/Valuations/adamodaran/indname.xlsx').fillna('') # Extract stocks, industry list
     us_stocks = indname_df[indname_df['Exchange:Ticker'].str.contains("Nasdaq|NYSE")] # Extract a sublist containing stocks listed in US exchanges
     us_stocks.reset_index(inplace=True) # Reset the index to start from 0 and increment sequentially (so they can be selected using a random number generator
