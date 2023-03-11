@@ -227,9 +227,8 @@ def value_company(symbol, industry, fundamentals, beta_to_use = 'global', rir_me
                                                             # that excel sheet here instead
     
     # In-code input parameters
-    erp = 5.11 # %. Equity risk premium for USA
-    tax = 20 # %. Tax rate. One can use effective or marginal. This changes based on state of registration.-
-             # But we will use a single figure that stands for all states. 
+    erp = 4.78 # %. Equity risk premium for USA
+    tax = 27 # %. Tax rate. We use marginal tax rate which might be too conservative. .-
     
     # Get beta to use from adamodaran's xls. 
     if beta_to_use == 'global':
