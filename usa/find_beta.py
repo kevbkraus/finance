@@ -19,7 +19,9 @@ import argparse
 msg = "Finds CAPM beta using the same method as used by yahoo finance"
 parser = argparse.ArgumentParser(description=msg)
 parser.add_argument('stock_ticker', help='stock ticker symbol (Ex. AAPL, GOOG, MSFT etc.)')
-parser.add_argument('-rf', '--risk_free_rate', help='Risk free rate (percentage)', type=float)
+parser.add_argument('-rf', '--risk_free_rate', help='Risk free rate (percentage) ex 4.35', type=float)
+parser.add_argument('-start_date', help='start date in yyyy-MM-dd format ex 2020-1-1', type=str)
+parser.add_argument('-end_date', help='end_date in yyyy-MM-dd format ex 2022-12-1', type=str)
 
 args = parser.parse_args()
 stock_ticker = args.stock_ticker
@@ -29,8 +31,18 @@ else:
     rf = 0.02
 
 # Set parameters
+# sometimes better to look at the beta over a specific time period and remove anomalous periods
+# (such as COVID market in 2020 and 2021).
 start = datetime(2016, 12, 2)
 end = date.today()
+
+if args.start_date:
+    start_str = args.start_date.split('-')
+    start = datetime(int(start_str[0]), int(start_str[1]), int(start_str[2]))
+if args.end_date:
+    end_str = args.end_date.split('-')
+    end = datetime(end_str[2], end_str[0], end_str[1])
+
 start_str = datetime.strftime(start, format='%Y-%m-%d')
 end_str = datetime.strftime(end, format='%Y-%m-%d')
 
