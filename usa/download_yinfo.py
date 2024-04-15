@@ -18,7 +18,7 @@ from tqdm import tqdm, trange
 import argparse
 
 # Parameters
-yinfo_filename = '/home/dinesh/Documents/security_prices/usa/yinfo.csv'
+yinfo_filename = './yinfo.csv'
 
 # Parse command line arguments
 msg = "Downloads yahoo stock information such as beta, financial ratios, company information"
