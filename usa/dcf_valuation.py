@@ -49,9 +49,6 @@ from openpyxl import load_workbook
 #   Downloads most updated financial statements from Alpha Vantage
 # --------------------------------------------------------------------------------------------------------------------------------
 def get_statements(symbol):
-    AV_URL = "https://www.alphavantage.co/query"
-    AV_KEY = os.environ.get('ALPHAVANTAGE_API_KEY')
-
     # NOTE: Alpha vantage always seems to give consolidated statements and not standalone. Net income figure seems to be net income attributable -
     # to controlling interest, which is the right thing to do
     statements = ['balance_sheet', 'income_statement', 'cashflow']
