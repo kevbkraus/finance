@@ -22,9 +22,9 @@ class AssetDailyPrice(Base):
     __tablename__ = "asset_daily_price"
     ticker: Mapped[str] = mapped_column(String(), primary_key=True)
     date: Mapped[str] = mapped_column(String(), primary_key=True)
-    close: Mapped[float]
+    adj_close: Mapped[float]
     def __repr__(self) -> str:
-        return f"Asset daily price(ticker={self.ticker!r}, date={self.date!r}, close={self.close!r})"
+        return f"Asset daily price(ticker={self.ticker!r}, date={self.date!r}, close={self.adj_close!r})"
     
 class AssetDividends(Base):
     __tablename__ = "asset_dividends"
